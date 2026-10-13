@@ -25,8 +25,8 @@ def _login_screenshot_env():
     )
     if not token:
         return None, None, None, None
-    szl = ShujuzonglanAPI(base_url=SCREENSHOT_BASE_URL, cookies={"token": token})
-    mb = MubiaoAPI(base_url=SCREENSHOT_BASE_URL, cookies={"token": token})
+    szl = ShujuzonglanAPI(cookies={"token": token})
+    mb = MubiaoAPI(cookies={"token": token})
     res_info = mb.get_supplier_info_no_auth()
     if res_info.get("code") != "10001200":
         return None, None, None, None

@@ -56,6 +56,15 @@ class BaseAPI:
         # proxies 允许显式传空字典关闭代理，因此使用 is not None 判断。
         self.proxies = proxies if proxies is not None else config.proxies
 
+        # 判断是否为阿里云后端 IP 直连模式。
+        # 全局开关：当 config.base_url 为 IP 时，所有接口实例（含自有域名默认值的子类）均启用路由。
+        # 实例级开关：当子类 __init__ 显式传入 IP base_url 时也同样启用。
+        # IP 模式下 BaseAPI.build_url 自动剥除网关前缀并按服务上下文路由到对应端口。
+        def _is_ip(url):
+            h = urlparse(url).hostname or ""
+            return bool(h) and h.replace(".", "").isdigit()
+        self.direct_mode = _is_ip(config.base_url) or _is_ip(self.base_url)
+
         # requests.Session 延迟初始化，只有真正发送请求时才创建。
         self.base_request = None
 
@@ -110,21 +119,66 @@ class BaseAPI:
                 self.base_request.cookies.set(k, v)
         return self.base_request
 
+    # 网关路径上下文（第一个路径段）对应 config.SVC_PORTS 键名。
+    # 新增服务时在此登记；未登记的服务会打印警告并使用 self.base_url 兆底。
+    _DIRECT_ROUTE_MAP: dict = {
+        "DJEASYORDER": "DJEASYORDER",
+        "djfinancemanage": "djfinancemanage",
+        "djcockpit": "djcockpit",
+        # 以下服务待确认端口后按格式添加：
+        # "oms":               "DJEASYORDER",   # TODO: 确认 OMS 服务端口
+        # "marketingActivity": "DJEASYORDER",   # TODO: 确认 marketingActivity 服务端口
+        # "orderManager":      "DJEASYORDER",   # TODO: 确认 orderManager 服务端口
+        # "analysis":          "djcockpit",     # TODO: 确认 analysis 服务端口
+        # "product":           "DJEASYORDER",   # TODO: 确认 product 服务端口
+    }
+
     def build_url(self, path_or_url):
         """根据相对路径或完整 URL 构造最终请求 URL。
+
+        IP 直连模式（self.direct_mode=True）时：
+        1. 剥除网关前缀 /djsupplier[/app]。
+        2. 按剩作路径的第一个段匹配服务上下文，路由到 config.svc_url() 对应的端口。
+        3. 未匹配的服务上下文会输出警告并退回到标准 base_url 拼接。
+
+        域名模式时行为不变，直接拼接 self.base_url + 相对路径。
+
         Args:
             path_or_url: 接口相对路径，或已经包含协议和域名的完整 URL。
         Returns:
             str: 可直接用于 requests 请求的完整 URL。
         """
-        # 如果传入的是完整 URL，直接返回，便于少量跨域或外部接口场景复用。
-        parsed = urlparse(path_or_url)
+        full = str(path_or_url)
+        parsed = urlparse(full)
+        # 已是完整 URL（包含协议和域名），直接返回。
         if parsed.scheme and parsed.netloc:
-            return path_or_url
+            return full
 
-        # 相对路径场景下统一处理首尾斜杠，避免拼接出重复斜杠。
+        # IP 直连模式：剥除网关前缀，按服务上下文路由到对应端口。
+        if self.direct_mode:
+            stripped = full
+            # 剥除优先级：/djsupplier/app 比 /djsupplier 更具体，必须优先匹配。
+            for gw in ("/djsupplier/app", "/djsupplier"):
+                if stripped.startswith(gw):
+                    stripped = stripped[len(gw):]
+                    break
+            # 取剥除后的第一个路径段作为服务上下文标识。
+            ctx = stripped.lstrip("/").split("/")[0] if stripped else ""
+            svc_key = self._DIRECT_ROUTE_MAP.get(ctx)
+            if svc_key:
+                return config.svc_url(svc_key) + stripped
+            # 未注册的服务：输出警告并使用 self.base_url 拼接，避免默默发出错误请求。
+            import sys
+            print(
+                f"[BaseAPI direct_mode WARN] 服务上下文 '{ctx}' 未在 _DIRECT_ROUTE_MAP 中注册，"
+                f"将使用 self.base_url={self.base_url} 拼接。"
+                f"请在 config.SVC_PORTS 中确认并添加对应端口。原始路径={full}",
+                file=sys.stderr,
+            )
+
+        # 标准路径拼接（域名模式或 IP 模式下的未匹配上下文）。
         base = self.base_url.rstrip("/")
-        path = str(path_or_url).lstrip("/")
+        path = full.lstrip("/")
         return f"{base}/{path}" if path else base
 
     @allure.step("发送接口请求")

@@ -4,9 +4,43 @@ from urllib.parse import urlparse
 # Allure 报告中展示的网站名称；为空时会从 base_url 自动解析域名。
 website_name = ""
 
-# 被测系统基础地址，必须包含协议和域名，例如：https://www.gbif.org
-# 阿里云环境后端 IP，核价接口直连后端服务
-base_url = os.getenv("API_TEST_BASE_URL", "https://example.invalid")
+# 被测系统基础地址。
+# 默认使用阿里云后端 IP 直连模式；设置 API_TEST_BASE_URL=https://suppliertest.onlinecps.cn 可切回域名模式。
+# IP 模式下 conftest auto_login 自动回退到 CPSOL_BASE_URL 登录，仅业务接口走 IP。
+# 注意：执行前必须已开启 VPN，否则 172.31.0.0/16 私网不可达。
+base_url = os.getenv("API_TEST_BASE_URL", "http://172.31.0.16:31086")
+
+# ==================== 阿里云后端 IP 直连服务端口映射 ====================
+# 背景：测试环境域名解析每日存在调用量限制，业务接口统一切换为直连后端 IP。
+# 登录流程仍走原有域名（conftest.auto_login 负责），仅业务逻辑接口使用下列地址。
+# 执行前必须开启 VPN，否则无法连接 172.31.0.0/16 阿里云 VPC 私网。
+# 预发布环境端口可能不同，通过环境变量覆盖；未确认的环境不允许复用测试端口值。
+BACKEND_IP = os.getenv("API_TEST_BACKEND_IP", "172.31.0.16")
+# 各服务对应的 NodePort（k8s 查询或后端确认值），当前为测试环境端口
+SVC_PORTS = {
+    # 数智拿单、销售策略、目标管理、线索、签到拜访、运距、竞对、重点关注
+    "DJEASYORDER": int(os.getenv("API_TEST_PORT_DJEASYORDER", "31086")),
+    # 总经理驾驶舱、经营分析、交付率看板、市场目标、履约、APP 订单查询
+    "djcockpit": int(os.getenv("API_TEST_PORT_DJCOCKPIT", "32221")),
+    # 核价工具、量价利、联合供应商、毛利分析（已在核价用例全量验证）
+    "djfinancemanage": int(os.getenv("API_TEST_PORT_DJFINANCEMANAGE", "30852")),
+}
+
+
+def svc_url(service_name, scheme="http"):
+    """返回指定服务在阿里云后端的直连基础地址（含协议、IP、端口，末尾无斜杠）。
+
+    Args:
+        service_name: SVC_PORTS 中的服务键名，如 DJEASYORDER / djcockpit / djfinancemanage。
+        scheme: 协议，默认 http（后端 NodePort 不走 HTTPS）。
+    Returns:
+        str: 完整 base_url，如 http://172.31.0.16:31086。
+    Raises:
+        KeyError: service_name 不在 SVC_PORTS 中时抛出。
+    """
+    port = SVC_PORTS[service_name]
+    return f"{scheme}://{BACKEND_IP}:{port}"
+
 
 # 是否使用 curl_cffi 模拟浏览器 TLS 指纹（绕过 Cloudflare 等 WAF）。
 # True: 使用 curl_cffi，需要安装 pip install curl_cffi

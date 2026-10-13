@@ -14,6 +14,17 @@ CPSOL_BASE_URL = "https://suppliertest.cpsol.net"
 # cpsol.net 的 token 存储，由 auto_login 填充
 cpsol_token = {}
 
+# ==================== 阿里云后端 IP 直连登录说明 ====================
+# 所有 IP 直连模式的登录统一回退到 CPSOL_BASE_URL（测试环境）。
+# 当前已确认的直连服务端口（测试环境推断，待 k8s 命名空间确认）：
+#   DJEASYORDER      → http://172.31.0.16:31086  (TCP已验证，测试环境)
+#   djcockpit        → http://172.31.0.16:32221  (TCP已验证，测试环境)
+#   djfinancemanage  → http://172.31.0.16:30852  (已在核价用例全量验证，测试环境)
+# 环境归属依据：上述服务在现有用例中均走 suppliertest 系列域名登录。
+# 预发布环境端口可能不同，未确认前必须通过环境变量覆盖，不得复用上述测试端口值。
+# 执行前必须开启 VPN，否则 172.31.0.0/16 私网不可达。
+# ==========================================================
+
 # smart.onlinecps.cn 域名登录配置（智能体模块使用-预发布环境）
 SMART_BASE_URL = "https://smart.onlinecps.cn"
 # smart.onlinecps.cn 的 token 存储，由 auto_login 填充
@@ -84,7 +95,12 @@ def auto_login():
 
     if not LOGIN_USERNAME or not LOGIN_PASSWORD:
         pytest.exit("请先设置 API_TEST_USERNAME 和 API_TEST_PASSWORD 环境变量。", returncode=4)
-    if urlparse(config.base_url).hostname == "example.invalid":
+    if _is_ip_host(config.base_url):
+        print(
+            f"\n[auto_login] 已启用阿里云后端 IP 直连：{config.base_url}；"
+            f"登录域名={CPSOL_BASE_URL}。请确认 VPN 已开启。"
+        )
+    elif urlparse(config.base_url).hostname == "example.invalid":
         pytest.exit("请先设置 API_TEST_BASE_URL 环境变量或配置 config.base_url。", returncode=4)
 
     # 1. 主域名登录（后端 IP 直连时 IP 不提供 CAS 登录，按抓包改走 cpsol.net 登录域名）
