@@ -23,3 +23,6 @@ api_test_dj_temp/
 *.jsonl
 Pipfile.lock
 Pipfile
+
+# 嵌套的独立 git 仓库（测试用例生成器副本），不纳入本仓库
+generate-test-cases(1)/
