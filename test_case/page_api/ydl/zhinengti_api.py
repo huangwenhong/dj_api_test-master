@@ -454,3 +454,29 @@ class ZhinengtiAPI(BaseAPI):
         url = f"{PRODUCT_PREFIX}/updatePricePlanEffect.do"
         error_msg = kwargs.pop("error_msg", "价格方案生效失败")
         return self._call_supplier_cpsol(url, payload_data, status_code, error_msg)
+
+    # ==================== 会话与置顶消息（首页加载） ====================
+
+    @allure.step("获取全部会话列表")
+    def get_all_conversations(self, payload_data, status_code=200, **kwargs):
+        """获取当前用户的全部 AI 会话列表（v2）"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{AI_PREFIX}/v2/getAllConversations.do"
+        payload = dict(payload_data)
+        error_msg = kwargs.pop("error_msg", "获取全部会话列表失败")
+        payload.update(kwargs)
+        return self.post(url, json=payload, status_code=status_code, error_msg=error_msg)
+
+    @allure.step("获取置顶消息列表")
+    def get_all_top_message_list(self, payload_data, status_code=200, **kwargs):
+        """获取智能体置顶消息列表（首页加载）"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{AI_PREFIX}/getAllTopMessageList.do"
+        payload = dict(payload_data)
+        error_msg = kwargs.pop("error_msg", "获取置顶消息列表失败")
+        payload.update(kwargs)
+        return self.post(url, json=payload, status_code=status_code, error_msg=error_msg)

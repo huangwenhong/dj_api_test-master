@@ -13,6 +13,20 @@ from urllib.parse import urlparse
 from utils.timeout_http_adapter import create_http_session
 
 
+def _safe_attach(body, name, attachment_type):
+    """向 Allure 附加响应附件；无测试上下文时静默跳过。
+
+    接口方法偶尔会在用例模块导入/pytest 收集阶段被调用（如模块级前置登录），
+    此时 allure 当前测试项为 None，直接 allure.attach 会抛 KeyError: None 并
+    中断整个收集。这里兜底捕获，保证非用例上下文调用接口时不影响收集/执行，
+    在正常用例内调用时行为不变。
+    """
+    try:
+        allure.attach(body, name=name, attachment_type=attachment_type)
+    except Exception:
+        pass
+
+
 class BaseAPI:
     """接口封装层公共基类。
 
@@ -200,6 +214,18 @@ class BaseAPI:
         # 通过复用 session 发送请求，继承统一 headers、cookies、timeout、proxies 等配置。
         response = self.get_base_request().request(method.upper(), url, **kwargs)
 
+        # IP 直连回退：/djsupplier 前缀的网关业务接口若未在裸 NodePort 暴露会返回 404，
+        # 这类接口改走网关域名重试一次（同一业务接口，网关域名可正常路由）。
+        if (
+            self.direct_mode
+            and response.status_code == 404
+            and isinstance(path_or_url, str)
+            and path_or_url.startswith("/djsupplier")
+        ):
+            fallback_url = config.gateway_base_url.rstrip("/") + path_or_url
+            response = self.get_base_request().request(method.upper(), fallback_url, **kwargs)
+            url = fallback_url
+
         # error_msg 可由接口方法传入，用于让失败日志更贴近业务接口含义。
         message = error_msg or f"接口<{url}>请求失败"
 
@@ -214,7 +240,7 @@ class BaseAPI:
         # 非 JSON、下载、重定向等特殊场景可要求返回原始 response。
         if return_response:
             # 记录原始响应文本到 Allure
-            allure.attach(
+            _safe_attach(
                 response.text[:5000],
                 name="响应内容",
                 attachment_type=allure.attachment_type.TEXT,
@@ -224,7 +250,7 @@ class BaseAPI:
             # 默认返回 JSON 结果，方便用例直接基于响应数据做断言。
             json_result = response.json()
             # 将 JSON 响应格式化后附加到 Allure 报告
-            allure.attach(
+            _safe_attach(
                 json.dumps(json_result, ensure_ascii=False, indent=2)[:5000],
                 name="响应内容",
                 attachment_type=allure.attachment_type.JSON,
@@ -232,7 +258,7 @@ class BaseAPI:
             return json_result
         except ValueError as exc:
             # 接口声明应返回 JSON 但实际不是 JSON 时，抛出带响应文本的断言错误。
-            allure.attach(
+            _safe_attach(
                 response.text[:5000],
                 name="响应内容(非JSON)",
                 attachment_type=allure.attachment_type.TEXT,

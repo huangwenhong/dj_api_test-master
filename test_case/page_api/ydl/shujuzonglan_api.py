@@ -28,6 +28,8 @@ PANDECT_PREFIX = "/djsupplier/analysis/pandect"
 AFTERMARKET_PREFIX = "/djsupplier/analysis/aftermarket"
 # 市场目标
 MARKET_PREFIX = "/djsupplier/DJEASYORDER/goal/market"
+# APP 经营管理看板（需 app-role=manage）
+APP_MANAGE_PREFIX = "/djsupplier/app/djcockpit/easyorder/manage"
 
 # 财务类接口使用的业务请求头（抓包 source=easy_mes）
 EASY_MES_HEADERS = {
@@ -743,3 +745,117 @@ class ShujuzonglanAPI(BaseAPI):
         error_msg = kwargs.pop("error_msg", "产品市场需求查询失败")
         payload.update(kwargs)
         return self.post(url, json=payload, status_code=status_code, error_msg=error_msg)
+
+    # ==================== APP 经营管理看板（/app/djcockpit/easyorder/manage） ====================
+
+    def _post_app_manage(self, url, payload_data, status_code, error_msg, **kwargs):
+        """APP 经营管理看板接口统一发送：补充 app-role=manage 请求头。"""
+        payload = dict(payload_data)
+        payload.update(kwargs)
+        original_headers = self.headers.copy() if self.headers else {}
+        self.headers = self.headers or {}
+        self.headers["app-role"] = "manage"
+        try:
+            return self.post(url, json=payload, status_code=status_code, error_msg=error_msg)
+        finally:
+            self.headers = original_headers
+
+    @allure.step("经营管理-订单分类")
+    def manage_get_order_class(self, payload_data, status_code=200, **kwargs):
+        """获取订单分类（返回 own/platform）"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{APP_MANAGE_PREFIX}/getOrderClass.do"
+        error_msg = kwargs.pop("error_msg", "获取订单分类失败")
+        return self._post_app_manage(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("经营管理-购物车与待付款销售信息")
+    def manage_get_shopping_cart_wait_pay_info(self, payload_data, status_code=200, **kwargs):
+        """获取购物车与待付款销售信息（金额/面积/客户数）"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{APP_MANAGE_PREFIX}/getShoppingCartAndWaitPaySaleInfo.do"
+        error_msg = kwargs.pop("error_msg", "获取购物车与待付款销售信息失败")
+        return self._post_app_manage(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("经营管理-产品供应商数量")
+    def manage_get_product_supplier_count(self, payload_data, status_code=200, **kwargs):
+        """获取产品供应商数量列表"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{APP_MANAGE_PREFIX}/getProductSupplierCount.do"
+        error_msg = kwargs.pop("error_msg", "获取产品供应商数量失败")
+        return self._post_app_manage(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("经营管理-销售概览")
+    def manage_get_sale_overview(self, payload_data, status_code=200, **kwargs):
+        """获取销售概览（销售额/面积/均价/边际贡献/目标等）"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{APP_MANAGE_PREFIX}/getSaleOverview.do"
+        error_msg = kwargs.pop("error_msg", "获取销售概览失败")
+        return self._post_app_manage(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("经营管理-重点区域销售信息")
+    def manage_get_key_region_sale_info(self, payload_data, status_code=200, **kwargs):
+        """获取重点区域销售信息列表"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{APP_MANAGE_PREFIX}/getKeyRegionSaleInfo.do"
+        error_msg = kwargs.pop("error_msg", "获取重点区域销售信息失败")
+        return self._post_app_manage(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("经营管理-区域销售信息")
+    def manage_get_region_sale_info(self, payload_data, status_code=200, **kwargs):
+        """获取区域销售信息列表"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{APP_MANAGE_PREFIX}/getRegionSaleInfo.do"
+        error_msg = kwargs.pop("error_msg", "获取区域销售信息失败")
+        return self._post_app_manage(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("经营管理-业务员列表信息")
+    def manage_get_salesman_list_info(self, payload_data, status_code=200, **kwargs):
+        """获取业务员销售列表信息"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{APP_MANAGE_PREFIX}/getSalesmanListInfo.do"
+        error_msg = kwargs.pop("error_msg", "获取业务员列表信息失败")
+        return self._post_app_manage(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("经营管理-下级组织销售信息")
+    def manage_get_subordinate_org_sale_info(self, payload_data, status_code=200, **kwargs):
+        """获取下级组织销售信息列表"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{APP_MANAGE_PREFIX}/getSubordinateOrgSaleInfo.do"
+        error_msg = kwargs.pop("error_msg", "获取下级组织销售信息失败")
+        return self._post_app_manage(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("经营管理-供应商列表")
+    def manage_get_supplier_list(self, payload_data, status_code=200, **kwargs):
+        """获取供应商销售列表"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{APP_MANAGE_PREFIX}/getSupplierList.do"
+        error_msg = kwargs.pop("error_msg", "获取供应商列表失败")
+        return self._post_app_manage(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("经营管理-产品销售信息")
+    def manage_get_product_sale_info(self, payload_data, status_code=200, **kwargs):
+        """获取产品销售信息列表"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{APP_MANAGE_PREFIX}/getProductSaleInfo.do"
+        error_msg = kwargs.pop("error_msg", "获取产品销售信息失败")
+        return self._post_app_manage(url, payload_data, status_code, error_msg, **kwargs)

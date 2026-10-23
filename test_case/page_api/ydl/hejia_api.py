@@ -416,6 +416,7 @@ class HejiaAPI(BaseAPI):
                             adjustSpace=None, processingFeeEditable=None,
                             rolePrices=None, processingFees=None,
                             approvalFlowNodes=None,
+                            usageRoles=None, fluteOptions=None,
                             status_code=200, **kwargs):
         """核价配置保存（供应端）
 
@@ -423,7 +424,8 @@ class HejiaAPI(BaseAPI):
           freightDefault, rebateVisible, rebateDefault, discountVisible,
           discountDefaultMode, discountPercentValue, discountFixedValue,
           needApproval, allowPriceAdjust, adjustSpace, processingFeeEditable,
-          rolePrices, processingFees, approvalFlowNodes
+          rolePrices（2.3.13 废弃）, processingFees, approvalFlowNodes
+        2.3.13 新增: usageRoles, fluteOptions（§7.1.2）
         """
         # Author: Author
         # Create Date: 2026-08-19
@@ -464,6 +466,10 @@ class HejiaAPI(BaseAPI):
             payload["processingFees"] = processingFees
         if approvalFlowNodes is not None:
             payload["approvalFlowNodes"] = approvalFlowNodes
+        if usageRoles is not None:
+            payload["usageRoles"] = usageRoles
+        if fluteOptions is not None:
+            payload["fluteOptions"] = fluteOptions
         error_msg = kwargs.pop("error_msg", "核价配置保存失败")
         payload.update(kwargs)
         return self.post(url, json=payload, status_code=status_code, error_msg=error_msg)
@@ -575,3 +581,79 @@ class HejiaAPI(BaseAPI):
         error_msg = kwargs.pop("error_msg", "获取供应端审批详情失败")
         payload.update(kwargs)
         return self.post(url, json=payload, status_code=status_code, error_msg=error_msg)
+
+    # ==================== 2.3.13 新增接口 ====================
+
+    @allure.step("楞型选项列表（2.3.13）")
+    def pricing_flute_option_get_options(self, supplierId=None, status_code=200, **kwargs):
+        """楞型选项列表（供应端，2.3.13 新增）
+
+        §7.1.4：供应商维护楞型选项，默认全选 E/B/C/A/EB/BC/AC/AAB 七种；
+        非全选时校验楞率必须手动填写；核价解析材料代码时仅对已启用楞型计算纸板价。
+        swagger 入参:
+          可选: supplierId
+        swagger 返参 data: array<object> [{fluteCode, defaultRate, editable}]
+        """
+        # Author: Author
+        # Create Date: 2026-10-20
+        # IsAI: True
+        url = f"{HEJIA_CONFIG_PREFIX}/fluteOption/getOptions"
+        params = {}
+        if supplierId is not None:
+            params["supplierId"] = supplierId
+        error_msg = kwargs.pop("error_msg", "获取楞型选项列表失败")
+        return self.get(url, params=params, status_code=status_code, error_msg=error_msg, **kwargs)
+
+    @allure.step("试算加工费（2.3.13）")
+    def calc_processing_fee(self, recordId, approvalId=None, price=None, priceType=None, status_code=200, **kwargs):
+        """试算加工费与最终价（APP 端，2.3.13 新增）
+
+        §7.3.5：销售调价时实时试算加工费与最终价格；
+        priceType=external 最终价四舍五入到 2 位小数，其他保留完整精度。
+        swagger 入参 (body):
+          必填: recordId（报价明细记录ID）
+          可选: approvalId（审批单ID，审批页试算时传）、price（新单价）、priceType（价格类型）
+        swagger 返参 data: {processingFee, finalPrice, originalProcessingFee}
+        """
+        # Author: Author
+        # Create Date: 2026-10-20
+        # IsAI: True
+        url = f"{HEJIA_APP_PREFIX}/calcProcessingFee"
+        payload = {"recordId": recordId}
+        if approvalId is not None:
+            payload["approvalId"] = approvalId
+        if price is not None:
+            payload["price"] = price
+        if priceType is not None:
+            payload["priceType"] = priceType
+        error_msg = kwargs.pop("error_msg", "试算加工费失败")
+        payload.update(kwargs)
+        return self.post(url, json=payload, status_code=status_code, error_msg=error_msg)
+
+    @allure.step("审批记录导出 Excel（2.3.13）")
+    def pricing_approval_export(self, supplierName=None, approvalStatus=None, startTime=None, endTime=None, status_code=200, **kwargs):
+        """审批记录导出 Excel（供应端，2.3.13 新增）
+
+        §7.2.2：按审批状态和时间范围导出，忽略分页参数。
+        返回二进制文件流，需用 return_response=True 获取原始 Response。
+        swagger 入参 (body):
+          可选: supplierName, approvalStatus, startTime, endTime
+        Returns:
+            requests.Response: 原始响应（Excel 二进制流），调用方用 .content 取字节。
+        """
+        # Author: Author
+        # Create Date: 2026-10-20
+        # IsAI: True
+        url = f"{HEJIA_APPROVAL_PREFIX}/export"
+        payload = {}
+        if supplierName is not None:
+            payload["supplierName"] = supplierName
+        if approvalStatus is not None:
+            payload["approvalStatus"] = approvalStatus
+        if startTime is not None:
+            payload["startTime"] = startTime
+        if endTime is not None:
+            payload["endTime"] = endTime
+        error_msg = kwargs.pop("error_msg", "审批记录导出失败")
+        payload.update(kwargs)
+        return self.post(url, json=payload, status_code=status_code, error_msg=error_msg, return_response=True)

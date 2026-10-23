@@ -162,7 +162,10 @@ class ShuzhinadanAPI(BaseAPI):
                            dimension="amount", sort="today_order_amount", sortType="desc",
                            dataOwnership="", pageNo=1, pageSize=100,
                            productId=None, status_code=200, **kwargs):
-        """客户销售列表（szorder/getCustomerSales.do）
+        """客户销售列表（szorder/product/getCustomerSales.do）
+
+        2026-10-23 web 抓包确认：产品详情页客户销售清单已迁移至 /szorder/product/ 端点，
+        旧 /szorder/getCustomerSales.do 返回 10201011 公司无权限。
 
         支持产品维度和用料代码维度两种调用方式。
 
@@ -178,7 +181,7 @@ class ShuzhinadanAPI(BaseAPI):
             pageSize: 每页条数（默认100）
             productId: 产品ID（产品维度时传入）
         """
-        url = f"{SZORDER_PREFIX}/getCustomerSales.do"
+        url = f"{SZORDER_PREFIX}/product/getCustomerSales.do"
         payload = {
             "date": date,
             "supplierId": supplierId,
@@ -510,7 +513,10 @@ class ShuzhinadanAPI(BaseAPI):
     @allure.step("作战看板-产品详情")
     def get_product_detail(self, date, supplierId, supplierName, productId=None,
                            dataOwnership="", status_code=200, **kwargs):
-        """产品详情（szorder/getProductDetail.do）
+        """产品详情（szorder/product/getProductDetail.do）
+
+        2026-10-23 web 抓包确认：产品详情已迁移至 /szorder/product/ 端点，
+        旧 /szorder/getProductDetail.do 返回 10201011 公司无权限。
 
         支持产品维度和用料代码维度两种调用方式。
 
@@ -521,7 +527,7 @@ class ShuzhinadanAPI(BaseAPI):
             productId: 产品ID（产品维度时传入）
             dataOwnership: 数据归属（默认空串）
         """
-        url = f"{SZORDER_PREFIX}/getProductDetail.do"
+        url = f"{SZORDER_PREFIX}/product/getProductDetail.do"
         payload = {
             "date": date,
             "supplierId": supplierId,
@@ -536,7 +542,10 @@ class ShuzhinadanAPI(BaseAPI):
     @allure.step("作战看板-接单情况")
     def get_order_situation(self, date, supplierId, supplierName, productId=None,
                             dataOwnership="", status_code=200, **kwargs):
-        """接单情况（szorder/getOrderSituation.do）
+        """接单情况（szorder/product/getOrderSituation.do）
+
+        2026-10-23 web 抓包确认：接单情况已迁移至 /szorder/product/ 端点，
+        旧 /szorder/getOrderSituation.do 返回 10201011 公司无权限。
 
         支持产品维度和用料代码维度两种调用方式。
 
@@ -547,7 +556,7 @@ class ShuzhinadanAPI(BaseAPI):
             productId: 产品ID（产品维度时传入）
             dataOwnership: 数据归属（默认空串）
         """
-        url = f"{SZORDER_PREFIX}/getOrderSituation.do"
+        url = f"{SZORDER_PREFIX}/product/getOrderSituation.do"
         payload = {
             "date": date,
             "supplierId": supplierId,
@@ -562,7 +571,10 @@ class ShuzhinadanAPI(BaseAPI):
     @allure.step("作战看板-成本分析")
     def get_cost_analysis(self, date, supplierId, supplierName, productId=None,
                           dataOwnership="", status_code=200, **kwargs):
-        """成本分析（szorder/getCostAnalysis.do）
+        """成本分析（szorder/product/getCostAnalysis.do）
+
+        2026-10-23 web 抓包确认：成本分析已迁移至 /szorder/product/ 端点，
+        旧 /szorder/getCostAnalysis.do 返回 10201011 公司无权限。
 
         支持产品维度和用料代码维度两种调用方式。
 
@@ -573,7 +585,7 @@ class ShuzhinadanAPI(BaseAPI):
             productId: 产品ID（产品维度时传入）
             dataOwnership: 数据归属（默认空串）
         """
-        url = f"{SZORDER_PREFIX}/getCostAnalysis.do"
+        url = f"{SZORDER_PREFIX}/product/getCostAnalysis.do"
         payload = {
             "date": date,
             "supplierId": supplierId,
@@ -588,7 +600,10 @@ class ShuzhinadanAPI(BaseAPI):
     @allure.step("作战看板-销售趋势")
     def get_sales_trend(self, date, supplierId, supplierName, productId=None,
                         dataOwnership="", status_code=200, **kwargs):
-        """销售趋势（szorder/getSalesTrend.do）
+        """销售趋势（szorder/product/getSalesTrend.do）
+
+        2026-10-23 web 抓包确认：销售趋势已迁移至 /szorder/product/ 端点，
+        旧 /szorder/getSalesTrend.do 返回 10201011 公司无权限。
 
         支持产品维度和用料代码维度两种调用方式。
 
@@ -599,7 +614,7 @@ class ShuzhinadanAPI(BaseAPI):
             productId: 产品ID（产品维度时传入）
             dataOwnership: 数据归属（默认空串）
         """
-        url = f"{SZORDER_PREFIX}/getSalesTrend.do"
+        url = f"{SZORDER_PREFIX}/product/getSalesTrend.do"
         payload = {
             "date": date,
             "supplierId": supplierId,

@@ -184,5 +184,5 @@ def main(case_path="test_case", marker=None, open_report=False, clean=True):
 
 if __name__ == "__main__":
 
-    # main()  # 默认的全量执行
-    main(case_path='test_case/test_gbif_case')  # 单独执行某个模块的用例
+    main()  # 默认全量执行（test_case）；需单跑某模块用：python runpytest.py --case-path test_case/test_gbif_case
+    # main(case_path='test_case/test_gbif_case')  # 单独执行某个模块的用例（硬编码入口，按需临时启用）

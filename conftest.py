@@ -11,8 +11,60 @@ LOGIN_APP_NAME = "DJSUPPLIER"
 
 # cpsol.net 域名登录配置（履约模块使用-测试环境）
 CPSOL_BASE_URL = "https://suppliertest.cpsol.net"
-# cpsol.net 的 token 存储，由 auto_login 填充
-cpsol_token = {}
+
+
+class _LazyTokenDict(dict):
+    """按需登录的 token 容器：首次 get("token") 为空时同步触发对应域名登录。
+
+    设计目的：避免 auto_login 在会话开始时对全部域名登录（5 组三步登录），
+    改为接口方法首次读取对应 token 时才登录，减少不必要的登录请求。
+    接口方法代码无需改动（仍然调用 conftest.xxx_token.get("token", "")）。
+    """
+
+    def __init__(self, name, base_url, fallback_cas_token=False):
+        super().__init__()
+        self._name = name
+        self._base_url = base_url
+        self._fallback_cas_token = fallback_cas_token
+        self._loaded = False
+
+    def _load(self):
+        if self._loaded:
+            return
+        self._loaded = True
+        from test_case.page_api.public.login_api import LoginAPI
+
+        try:
+            api = LoginAPI(base_url=self._base_url)
+            tok, details = api.login(LOGIN_USERNAME, LOGIN_PASSWORD, LOGIN_APP_NAME)
+            if tok:
+                self["token"] = tok
+                print(f"[auto_login] {self._name} 登录成功（按需）")
+            elif self._fallback_cas_token:
+                cas = api.session.cookies.get("casToken", "")
+                if cas:
+                    self["token"] = cas
+                    print(f"[auto_login] {self._name} 使用 casToken 登录（按需）")
+                else:
+                    print(f"[auto_login] {self._name} 登录失败: {details}")
+            else:
+                print(f"[auto_login] {self._name} 登录失败: {details}")
+        except Exception as e:
+            print(f"[auto_login] {self._name} 登录异常: {e}")
+
+    def get(self, key, default=None):
+        if key == "token":
+            self._load()
+        return super().get(key, default)
+
+    def __getitem__(self, key):
+        if key == "token":
+            self._load()
+        return super().__getitem__(key)
+
+
+# cpsol.net 的 token 存储，由接口方法首次读取时按需登录填充
+cpsol_token = _LazyTokenDict("cpsol.net", CPSOL_BASE_URL)
 
 # ==================== 阿里云后端 IP 直连登录说明 ====================
 # 所有 IP 直连模式的登录统一回退到 CPSOL_BASE_URL（测试环境）。
@@ -27,18 +79,18 @@ cpsol_token = {}
 
 # smart.onlinecps.cn 域名登录配置（智能体模块使用-预发布环境）
 SMART_BASE_URL = "https://smart.onlinecps.cn"
-# smart.onlinecps.cn 的 token 存储，由 auto_login 填充
-smart_token = {}
+# smart.onlinecps.cn 的 token 存储，由接口方法首次读取时按需登录填充
+smart_token = _LazyTokenDict("smart.onlinecps.cn", SMART_BASE_URL)
 
 # smart.cpsol.net 域名登录配置（产品上架模块使用）
 SMART_CPSOL_BASE_URL = "https://smart.cpsol.net"
-# smart.cpsol.net 的 token 存储，由 auto_login 填充
-smart_cpsol_token = {}
+# smart.cpsol.net 的 token 存储，由接口方法首次读取时按需登录填充（阿里云环境回退 casToken）
+smart_cpsol_token = _LazyTokenDict("smart.cpsol.net", SMART_CPSOL_BASE_URL, fallback_cas_token=True)
 
 # oatest.cpsol.net 域名登录配置（签到模块使用-阿里云环境）
 OATEST_CPSOL_BASE_URL = "https://oatest.cpsol.net"
-# oatest.cpsol.net 的 token 存储，由 auto_login 填充
-oatest_token = {}
+# oatest.cpsol.net 的 token 存储，由接口方法首次读取时按需登录填充（阿里云环境回退 casToken）
+oatest_token = _LazyTokenDict("oatest.cpsol.net", OATEST_CPSOL_BASE_URL, fallback_cas_token=True)
 
 # aiagent.djcps.com 域名配置（市场分析智能体使用）
 AIAGENT_BASE_URL = "https://aiagent.djcps.com"
@@ -62,6 +114,30 @@ def pytest_addoption(parser):
 
     # --website-name 用于覆盖 Allure 报告中的网站/项目名称展示。
     parser.addoption("--website-name", action="store", default=None, help="override Allure epic website name")
+
+
+def pytest_collection_modifyitems(config, items):
+    """用户要求：跳过的用例不执行、不统计。
+
+    collect 后 deselect 带 skip / skipif marker 的用例（静态跳过），
+    使其不进入执行阶段、也不出现在报告统计中。
+    动态跳过（用例内 pytest.skip()）无法在 collect 阶段预知，
+    仍会执行到 skip 调用点，但报告生成时会过滤不统计。
+    """
+    deselected = []
+    kept = []
+    for item in items:
+        if item.get_closest_marker("skip") or item.get_closest_marker("skipif"):
+            deselected.append(item)
+        else:
+            kept.append(item)
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = kept
+        print(
+            f"\n[conftest] 已 deselect {len(deselected)} 个带 skip marker 的用例"
+            f"（不执行、不统计）: {[i.name for i in deselected]}"
+        )
 
 
 @pytest.fixture(scope="session")
@@ -90,7 +166,11 @@ def website_name(request, base_url):
 
 @pytest.fixture(scope="session", autouse=True)
 def auto_login():
-    """每次执行用例前自动登录，获取新 token 并更新 config.default_cookies。"""
+    """每次执行用例前自动登录主域名，获取新 token 并更新 config.default_cookies。
+
+    其他域名（cpsol.net / smart.onlinecps.cn / smart.cpsol.net / oatest.cpsol.net）
+    改为按需登录：接口方法首次读取对应 token 容器时由 _LazyTokenDict 同步触发。
+    """
     from test_case.page_api.public.login_api import LoginAPI
 
     if not LOGIN_USERNAME or not LOGIN_PASSWORD:
@@ -103,7 +183,7 @@ def auto_login():
     elif urlparse(config.base_url).hostname == "example.invalid":
         pytest.exit("请先设置 API_TEST_BASE_URL 环境变量或配置 config.base_url。", returncode=4)
 
-    # 1. 主域名登录（后端 IP 直连时 IP 不提供 CAS 登录，按抓包改走 cpsol.net 登录域名）
+    # 主域名登录（后端 IP 直连时 IP 不提供 CAS 登录，按抓包改走 cpsol.net 登录域名）
     login_base_url = CPSOL_BASE_URL if _is_ip_host(config.base_url) else config.base_url
     api = LoginAPI(base_url=login_base_url)
     token, details = api.login(LOGIN_USERNAME, LOGIN_PASSWORD, LOGIN_APP_NAME)
@@ -115,69 +195,7 @@ def auto_login():
     config.default_cookies["token"] = token
     print(f"\n[auto_login] {login_base_url} 登录成功")
 
-    # 2. cpsol.net 域名登录（履约模块使用）
-    try:
-        cpsol_api = LoginAPI(base_url=CPSOL_BASE_URL)
-        cpsol_tok, cpsol_details = cpsol_api.login(LOGIN_USERNAME, LOGIN_PASSWORD, LOGIN_APP_NAME)
-        if cpsol_tok:
-            cpsol_token["token"] = cpsol_tok
-            print("[auto_login] cpsol.net 登录成功")
-        else:
-            print(f"[auto_login] cpsol.net 登录失败: {cpsol_details}")
-    except Exception as e:
-        print(f"[auto_login] cpsol.net 登录异常: {e}")
-
-    # 3. smart.onlinecps.cn 域名登录（智能体模块使用）
-    try:
-        smart_api = LoginAPI(base_url=SMART_BASE_URL)
-        smart_tok, smart_details = smart_api.login(LOGIN_USERNAME, LOGIN_PASSWORD, LOGIN_APP_NAME)
-        if smart_tok:
-            smart_token["token"] = smart_tok
-            print("[auto_login] smart.onlinecps.cn 登录成功")
-        else:
-            print(f"[auto_login] smart.onlinecps.cn 登录失败: {smart_details}")
-    except Exception as e:
-        print(f"[auto_login] smart.onlinecps.cn 登录异常: {e}")
-
-    # 4. smart.cpsol.net 域名登录（产品上架模块使用，阿里云环境）
-    # 阿里云环境 exchangetoken 可能失败，改用 casToken 作为认证
-    try:
-        smart_cpsol_api = LoginAPI(base_url=SMART_CPSOL_BASE_URL)
-        # 先尝试标准登录流程
-        smart_cpsol_tok, smart_cpsol_details = smart_cpsol_api.login(LOGIN_USERNAME, LOGIN_PASSWORD, LOGIN_APP_NAME)
-        if smart_cpsol_tok:
-            smart_cpsol_token["token"] = smart_cpsol_tok
-            print("[auto_login] smart.cpsol.net 登录成功")
-        else:
-            # 阿里云环境回退：使用 casToken 作为认证
-            cas_token = smart_cpsol_api.session.cookies.get("casToken", "")
-            if cas_token:
-                smart_cpsol_token["token"] = cas_token
-                print("[auto_login] smart.cpsol.net 使用 casToken 登录")
-            else:
-                print(f"[auto_login] smart.cpsol.net 登录失败: {smart_cpsol_details}")
-    except Exception as e:
-        print(f"[auto_login] smart.cpsol.net 登录异常: {e}")
-
-    # 5. oatest.cpsol.net 域名登录（签到模块使用，阿里云环境）
-    try:
-        oatest_api = LoginAPI(base_url=OATEST_CPSOL_BASE_URL)
-        oatest_tok, oatest_details = oatest_api.login(LOGIN_USERNAME, LOGIN_PASSWORD, LOGIN_APP_NAME)
-        if oatest_tok:
-            oatest_token["token"] = oatest_tok
-            print("[auto_login] oatest.cpsol.net 登录成功")
-        else:
-            # 阿里云环境回退：使用 casToken 作为认证
-            cas_token = oatest_api.session.cookies.get("casToken", "")
-            if cas_token:
-                oatest_token["token"] = cas_token
-                print("[auto_login] oatest.cpsol.net 使用 casToken 登录")
-            else:
-                print(f"[auto_login] oatest.cpsol.net 登录失败: {oatest_details}")
-    except Exception as e:
-        print(f"[auto_login] oatest.cpsol.net 登录异常: {e}")
-
-    # 6. aiagent.djcps.com 域名（市场分析智能体，token 由外部提供）
+    # aiagent.djcps.com 域名（市场分析智能体，token 由外部提供）
     if not corrusense_token.get("token"):
         corrusense_token["token"] = os.getenv("API_TEST_AIAGENT_TOKEN", "")
         if corrusense_token["token"]:

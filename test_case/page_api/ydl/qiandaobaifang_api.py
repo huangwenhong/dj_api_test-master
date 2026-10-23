@@ -844,3 +844,87 @@ class QiandaoBaifangAPI(BaseAPI):
         finally:
             self.headers = original_headers
         return result
+
+    # ==================== APP 业务员工作台（/app/djcockpit/easyorder/salesman） ====================
+
+    def _post_app_salesman(self, url, payload_data, status_code, error_msg, **kwargs):
+        """APP 业务员工作台接口统一发送：补充 app-role=salesman 请求头。"""
+        payload = dict(payload_data)
+        payload.update(kwargs)
+        original_headers = self.headers.copy() if self.headers else {}
+        self.headers = self.headers or {}
+        self.headers["app-role"] = "salesman"
+        try:
+            return self.post(url, json=payload, status_code=status_code, error_msg=error_msg)
+        finally:
+            self.headers = original_headers
+
+    @allure.step("业务员工作台-判断合作业务员")
+    def salesman_judge_cooperation(self, payload_data, status_code=200, **kwargs):
+        """判断是否合作业务员/供应商及组织列表"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{SALESMAN_PREFIX}/judgeCooperationSalesman.do"
+        error_msg = kwargs.pop("error_msg", "判断合作业务员失败")
+        return self._post_app_salesman(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("业务员工作台-订单产品数量")
+    def salesman_get_order_product_num(self, payload_data, status_code=200, **kwargs):
+        """获取订单产品数量"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{SALESMAN_PREFIX}/getOrderProductNum.do"
+        error_msg = kwargs.pop("error_msg", "获取订单产品数量失败")
+        return self._post_app_salesman(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("业务员工作台-购物车列表")
+    def salesman_get_shopping_cart_list(self, payload_data, status_code=200, **kwargs):
+        """获取购物车列表（金额/面积/分页）"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{SALESMAN_PREFIX}/getShoppingCartList.do"
+        error_msg = kwargs.pop("error_msg", "获取购物车列表失败")
+        return self._post_app_salesman(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("业务员工作台-销售概览")
+    def salesman_get_sale_overview(self, payload_data, status_code=200, **kwargs):
+        """获取业务员销售概览（目标/进度/销售额/面积）"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{SALESMAN_PREFIX}/getSaleOverview.do"
+        error_msg = kwargs.pop("error_msg", "获取业务员销售概览失败")
+        return self._post_app_salesman(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("业务员工作台-客户概览")
+    def salesman_get_customer_overview(self, payload_data, status_code=200, **kwargs):
+        """获取业务员客户概览（活跃客户数/列表）"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{SALESMAN_PREFIX}/getSalesmanCustomerOverview.do"
+        error_msg = kwargs.pop("error_msg", "获取业务员客户概览失败")
+        return self._post_app_salesman(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("业务员工作台-待办列表")
+    def salesman_get_to_be_completed_list(self, payload_data, status_code=200, **kwargs):
+        """获取待办列表（金额/面积/分页）"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{SALESMAN_PREFIX}/getToBeCompletedList.do"
+        error_msg = kwargs.pop("error_msg", "获取待办列表失败")
+        return self._post_app_salesman(url, payload_data, status_code, error_msg, **kwargs)
+
+    @allure.step("业务员工作台-今日产品列表")
+    def salesman_get_today_product_list(self, payload_data, status_code=200, **kwargs):
+        """获取今日产品列表（v1）"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        url = f"{SALESMAN_PREFIX}/v1/getTodayProductList.do"
+        error_msg = kwargs.pop("error_msg", "获取今日产品列表失败")
+        return self._post_app_salesman(url, payload_data, status_code, error_msg, **kwargs)

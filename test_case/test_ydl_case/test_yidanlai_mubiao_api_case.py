@@ -301,9 +301,9 @@ class TestGoalSetting:
                 assert field in first_supplier, \
                     f"供应商列表缺少{field}, item={first_supplier}"
 
-        # 6. 生成组织目标 - 测试环境可能无权限
+        # 6. 生成组织目标 - 测试环境可能无权限；当月目标已生成时返回 11030001 目标重复（写操作幂等状态，视为正常）
         res_gen = MB.generate_goal(orgId=org_id, month=current_month)
-        assert res_gen.get("code") in ("10001200", "10201011"), \
+        assert res_gen.get("code") in ("10001200", "10201011", "11030001"), \
             f"生成目标返回异常code, 接口返回={res_gen}"
         if res_gen.get("code") == "10201011":
             assert res_gen.get("success") is False, "权限不足时success应为False"

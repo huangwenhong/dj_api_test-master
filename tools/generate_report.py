@@ -412,11 +412,14 @@ def generate_html(data, output_path="report/接口测试报告.html", allure_map
     created = data.get("created", datetime.now().isoformat())
     duration = data.get("duration", 0)
 
-    total = summary.get("total", 0)
-    passed = summary.get("passed", 0)
-    failed = summary.get("failed", 0)
-    skipped = summary.get("skipped", 0)
-    error = summary.get("error", 0)
+    # 用户要求：跳过的用例不统计到报告里。
+    # 过滤 outcome=="skipped" 的用例并重算 summary（动态 skip 用例执行后在此过滤）。
+    tests = [t for t in tests if t.get("outcome") != "skipped"]
+    total = len(tests)
+    passed = sum(1 for t in tests if t.get("outcome") == "passed")
+    failed = sum(1 for t in tests if t.get("outcome") == "failed")
+    error = sum(1 for t in tests if t.get("outcome") == "error")
+    skipped = 0  # 已过滤，不统计
     pass_rate = (passed / total * 100) if total > 0 else 0
 
     # 按模块分组

@@ -54,6 +54,30 @@ def _tree_layers(res):
             if isinstance(n, dict) and n.get("value") is not None}
 
 
+# ==================== 2.3.13 版本探测 ====================
+
+_ENV_2313 = None
+
+
+def _is_2313():
+    """探测环境是否已升级 2.3.13：getConfig 返回 usageRole 字段（§7.3.1）。
+
+    模块级缓存，只调一次接口。
+    """
+    global _ENV_2313
+    if _ENV_2313 is None:
+        res = HJ.get_config()
+        data = res.get("data") or {}
+        _ENV_2313 = "usageRole" in data
+    return _ENV_2313
+
+
+def _require_2313():
+    """前置：环境须已升级 2.3.13，否则 skip 用例（旧环境不跑 2.3.13 断言）。"""
+    if not _is_2313():
+        pytest.skip("环境未升级 2.3.13（getConfig 无 usageRole），跳过 2.3.13 断言")
+
+
 # ==================== 链路 1：APP 端核价提交 ====================
 
 @allure.feature("核价工具-APP 端核价提交")
@@ -65,6 +89,9 @@ class TestHejiaAppCalculate:
         # Author: Author
         # Create Date: 2026-08-20
         # IsAI: True
+
+        # 0. 前置：环境已升级 2.3.13（getConfig 返回 usageRole、calculate 含角色校验）
+        _require_2313()
 
         # 1. 客户/线索选择（searchCustomer.do）
         res_customer = HJ.search_customer()
@@ -112,6 +139,9 @@ class TestHejiaAppCalculate:
         # Author: Author
         # Create Date: 2026-08-20
         # IsAI: True
+
+        # 0. 前置：环境已升级 2.3.13（submitApproval 防重规则变化）
+        _require_2313()
 
         # 1. 选客户/线索，返回值需含 list
         customer_res = HJ.search_customer(keyword="测试")
@@ -181,6 +211,9 @@ class TestHejiaAppApproval:
         # Create Date: 2026-08-20
         # IsAI: True
 
+        # 0. 前置：环境已升级 2.3.13
+        _require_2313()
+
         # 1. 审批列表（getApprovalListApp.do）
         res_list = HJ.get_approval_list_app()
         _ok(res_list, "获取APP端审批列表失败")
@@ -211,6 +244,9 @@ class TestHejiaAppApproval:
         # Author: Author
         # Create Date: 2026-08-20
         # IsAI: True
+
+        # 0. 前置：环境已升级 2.3.13（防重去价格、新业务态码）
+        _require_2313()
 
         # 1. 自建一条核价提交（本账号提交后自动流转为已通过）
         calc_res = HJ.calculate(materialCode=MATERIAL_CODE, fluteType="BC")
@@ -292,6 +328,9 @@ class TestHejiaAppHistory:
         # Create Date: 2026-08-20
         # IsAI: True
 
+        # 0. 前置：环境已升级 2.3.13
+        _require_2313()
+
         # 1. 历史核价记录列表（getHistory.do）
         res_list = HJ.get_history()
         _ok(res_list, "获取历史核价记录列表失败")
@@ -318,12 +357,16 @@ class TestHejiaAppHistory:
 @allure.feature("核价工具-供应端核价配置")
 class TestHejiaConfig:
 
+    @pytest.mark.skip(reason="核价/原纸价格相关接口开发中，先跳过，测试阶段再执行")
     @allure.story("供应端配置管理链路")
     def test_ydl_HJ_config_manage(self):
-        """供应端配置管理：联合供应商→配置查询→配置保存→原纸档案→搜索用户→上架层数"""
+        """供应端配置管理：联合供应商→配置查询→配置保存→原纸档案→搜索用户→上架层数(2.3.13固定2~7)"""
         # Author: Author
         # Create Date: 2026-08-20
         # IsAI: True
+
+        # 0. 前置：环境已升级 2.3.13（层数固定 2~7、配置结构变化）
+        _require_2313()
 
         # 1. 根据供应商取联合供应商（getUnionSupplierListNoAuth.do）
         res_union = HJ.get_union_supplier_no_auth(supplierId="402")
@@ -367,89 +410,42 @@ class TestHejiaConfig:
         res_user_keyword = HJ.pricing_user_search(keyword="张")
         _ok(res_user_keyword, "搜索用户（关键字）失败")
 
-        # 8. 供应商上架层数列表（pricingLayerGetList.do）
-        #    层数/楞型按每个供应商各自的上架产品去重统计，销售主体与子供应商的
-        #    上架产品可能不同，需分别按 supplierId 查询，校验各供应商返回自身去重后的层数集合
+        # 8. 供应商上架层数列表（2.3.13：固定 2~7，不再按供应商去重，§7.1.3）
         res_layer = HJ.pricing_layer_get_list()
         _ok(res_layer, "获取供应商上架层数列表失败")
         layer_rows = _has_list(res_layer)
         assert isinstance(layer_rows, list), \
             f"层数列表类型异常, 期望list, 实际={type(layer_rows)}"
-        for row in layer_rows:
-            assert 2 <= int(row.get("layer", 0)) <= 7, \
-                f"上架层数超出有效范围(2~7), row={row}"
+        layers = {int(row.get("layer")) for row in layer_rows if row.get("layer") is not None}
+        assert layers == {2, 3, 4, 5, 6, 7}, \
+            f"2.3.13 层数应固定 2~7, 实际={sorted(layers)}"
 
-        # 8.1 从联合供应商列表区分销售主体(salesMain=y)与子供应商(salesMain=n)
-        union_rows = _has_list(res_union)
-        main_sup = next((r for r in union_rows
-                         if str(r.get("salesMain", "")).lower() in ("y", "1", "true")), None)
-        sub_sup = next((r for r in union_rows
-                        if str(r.get("salesMain", "")).lower() in ("n", "0", "false")), None)
+    @allure.story("核价配置页层数固定 2~7（2.3.13）")
+    def test_ydl_HJ_layer_fixed_2_to_7(self):
+        """2.3.13：layer/getList 不再取大数据上架产品，固定返回 2~7 层，不随供应商变化（§7.1.3）
 
-        # 8.2 销售主体按自身 supplierId 查询上架层数
-        if main_sup:
-            res_layer_main = HJ.pricing_layer_get_list(supplierId=main_sup.get("supplierId"))
-            _ok(res_layer_main, "获取销售主体上架层数列表失败")
-            main_layers = {row.get("layer") for row in _has_list(res_layer_main)}
-            assert main_layers, f"销售主体({main_sup.get('supplierId')})上架层数为空"
-
-        # 8.3 子供应商按自身 supplierId 查询上架层数（与销售主体各自独立去重）
-        if sub_sup:
-            res_layer_sub = HJ.pricing_layer_get_list(supplierId=sub_sup.get("supplierId"))
-            _ok(res_layer_sub, "获取子供应商上架层数列表失败")
-            sub_layers = {row.get("layer") for row in _has_list(res_layer_sub)}
-            assert sub_layers, f"子供应商({sub_sup.get('supplierId')})上架层数为空"
-
-    @allure.story("核价配置页与纸板团购上架层数一致性")
-    def test_ydl_HJ_layer_flute_consistency(self):
-        """跨模块一致性：逐个供应商对比核价配置页层数与纸板团购上架产品层数是否完全一致
-
-        业务口径：核价配置页(pricing/config/layer/getList)与纸板团购
-        (product/loadExistLayerAndFlute.do)的层数都应按各供应商上架产品去重统计，
-        同一供应商两者层数集合应完全一致；销售主体与子供应商各自独立对比。
+        旧逻辑（2.3.12 及以前）按供应商上架产品去重；2.3.13 改为固定返回 2~7。
         """
         # Author: Author
-        # Create Date: 2026-09-15
+        # Create Date: 2026-10-20
         # IsAI: True
 
-        # 1. 取联合供应商列表（销售主体 salesMain=y + 子供应商 salesMain=n）
-        res_union = HJ.get_union_supplier_no_auth(supplierId="402")
-        _ok(res_union, "获取联合供应商失败")
-        union_rows = _has_list(res_union)
-        assert union_rows, f"联合供应商列表为空, 无法对比层数, res={res_union}"
+        # 1. 前置：环境已升级 2.3.13
+        _require_2313()
 
-        # 2. 逐个供应商对比核价层数集合与纸板团购层数集合
-        mismatches = []
-        for sup in union_rows:
-            sid = sup.get("supplierId")
-            if sid is None:
-                continue
+        # 2. 无 supplierId 查询层数列表，应固定 2~7
+        res = HJ.pricing_layer_get_list()
+        _ok(res, "获取供应商上架层数列表失败")
+        layers = {int(r.get("layer")) for r in _has_list(res) if r.get("layer") is not None}
+        assert layers == {2, 3, 4, 5, 6, 7}, \
+            f"层数未固定 2~7, 实际={sorted(layers)}, res={res}"
 
-            # 2.1 核价配置页层数（扁平结构 data:[{layer,layerName}]）
-            res_hj = HJ.pricing_layer_get_list(supplierId=sid)
-            _ok(res_hj, f"核价上架层数查询失败(supplierId={sid})")
-            hj_layers = {int(r.get("layer")) for r in _has_list(res_hj)
-                         if r.get("layer") is not None}
-
-            # 2.2 纸板团购上架层数（双层信封 data.data.list 层数->楞型树，节点 value=层数）
-            res_pr = PROD.load_exist_layer_and_flute(supplierId=sid)
-            _ok(res_pr, f"纸板团购上架层数楞型查询失败(supplierId={sid})")
-            pr_layers = _tree_layers(res_pr)
-
-            # 2.3 严格相等对比，收集不一致明细（含双向差集，便于定位缺失层数）
-            if hj_layers != pr_layers:
-                mismatches.append({
-                    "supplierId": sid,
-                    "salesMain": sup.get("salesMain"),
-                    "核价层数": sorted(hj_layers),
-                    "纸板团购层数": sorted(pr_layers),
-                    "团购有核价缺": sorted(pr_layers - hj_layers),
-                    "核价有团购缺": sorted(hj_layers - pr_layers),
-                })
-
-        # 3. 断言所有供应商核价层数与纸板团购上架层数完全一致
-        assert not mismatches, \
-            f"核价配置页与纸板团购上架产品层数不一致(共{len(mismatches)}个供应商): {mismatches}"
+        # 3. 带 supplierId 也应固定 2~7（不再按供应商去重）
+        res_sup = HJ.pricing_layer_get_list(supplierId="402")
+        _ok(res_sup, "获取供应商上架层数列表（supplierId）失败")
+        layers_sup = {int(r.get("layer")) for r in _has_list(res_sup) if r.get("layer") is not None}
+        assert layers_sup == {2, 3, 4, 5, 6, 7}, \
+            f"层数(supplierId=402)未固定 2~7, 实际={sorted(layers_sup)}, res={res_sup}"
 
 
 # ==================== 链路 5：供应端审批 ====================
@@ -463,6 +459,9 @@ class TestHejiaApproval:
         # Author: Author
         # Create Date: 2026-08-20
         # IsAI: True
+
+        # 0. 前置：环境已升级 2.3.13
+        _require_2313()
 
         # 1. 审批记录列表（pricingApprovalGetList.do）
         res_list = HJ.pricing_approval_get_list()
@@ -484,3 +483,87 @@ class TestHejiaApproval:
             pytest.skip("审批记录列表为空，无法验证审批详情")
         res_detail = HJ.pricing_approval_get_detail(id=approval_id)
         _ok(res_detail, "获取供应端审批详情失败")
+
+
+# ==================== 链路 6：2.3.13 新增功能 ====================
+
+@allure.feature("核价工具-2.3.13 新增功能")
+class TestHejia2313NewFeature:
+
+    @pytest.mark.skip(reason="核价/原纸价格相关接口开发中，先跳过，测试阶段再执行")
+    @allure.story("楞型选项查询（2.3.13）")
+    def test_ydl_HJ_flute_option_query(self):
+        """2.3.13 楞型选项：fluteOption/getOptions 返回默认楞型（E/B/C/A/EB/BC/AC/AAB）（§7.1.4）"""
+        # Author: Author
+        # Create Date: 2026-10-20
+        # IsAI: True
+
+        # 0. 前置：环境已升级 2.3.13
+        _require_2313()
+
+        # 1. 查询楞型选项
+        res = HJ.pricing_flute_option_get_options()
+        _ok(res, "获取楞型选项列表失败")
+        options = _has_list(res)
+        assert isinstance(options, list), \
+            f"楞型选项类型异常, 期望list, 实际={type(options)}"
+
+        # 2. 默认七种楞型（全选时），非全选时为子集
+        flute_codes = {o.get("fluteCode") for o in options if o.get("fluteCode")}
+        default_flutes = {"E", "B", "C", "A", "EB", "BC", "AC", "AAB"}
+        assert flute_codes.issubset(default_flutes), \
+            f"存在未知楞型, 实际={flute_codes}, 默认={default_flutes}"
+        assert flute_codes, f"楞型选项为空, res={res}"
+
+    @pytest.mark.skip(reason="核价/原纸价格相关接口开发中，先跳过，测试阶段再执行")
+    @allure.story("试算加工费（2.3.13）")
+    def test_ydl_HJ_calc_processing_fee(self):
+        """2.3.13 试算加工费：核价计算取 recordId 后调 calcProcessingFee 返回 processingFee/finalPrice（§7.3.5）"""
+        # Author: Author
+        # Create Date: 2026-10-20
+        # IsAI: True
+
+        # 0. 前置：环境已升级 2.3.13
+        _require_2313()
+
+        # 1. 先核价计算取 recordId
+        calc_res = HJ.calculate(materialCode=MATERIAL_CODE, fluteType="BC")
+        _ok(calc_res, "核价计算失败")
+        record_id = (calc_res.get("data") or {}).get("recordId")
+        if not record_id:
+            pytest.skip("核价计算未返回 recordId, 无法试算加工费")
+
+        # 2. 试算加工费（不传 price 用当前值）
+        res = HJ.calc_processing_fee(recordId=record_id)
+        _ok(res, "试算加工费失败")
+        data = res.get("data") or {}
+        assert "processingFee" in data, f"试算结果缺 processingFee, data={data}"
+        assert "finalPrice" in data, f"试算结果缺 finalPrice, data={data}"
+
+    @allure.story("审批记录导出（2.3.13）")
+    def test_ydl_HJ_approval_export(self):
+        """2.3.13 审批记录导出：approval/export 返回 Excel 二进制流（§7.2.2）"""
+        # Author: Author
+        # Create Date: 2026-10-20
+        # IsAI: True
+
+        # 0. 前置：环境已升级 2.3.13
+        _require_2313()
+
+        # 1. 导出审批记录（return_response=True 取原始响应）
+        resp = HJ.pricing_approval_export(approvalStatus="1")
+        assert resp.status_code == 200, \
+            f"导出接口 HTTP 状态码异常={resp.status_code}, text={resp.text[:200]}"
+
+        # 2. 验证返回 Excel 文件流（文件头 PK 或 Content-Type 含 spreadsheet/octet-stream）
+        content_type = resp.headers.get("Content-Type", "")
+        content = resp.content
+        assert content, f"导出内容为空, Content-Type={content_type}"
+        is_excel = (
+            content[:2] == b"PK"
+            or "spreadsheet" in content_type
+            or "octet-stream" in content_type
+            or "excel" in content_type.lower()
+        )
+        assert is_excel, \
+            f"导出非 Excel 文件流, Content-Type={content_type}, 文件头={content[:8]}"

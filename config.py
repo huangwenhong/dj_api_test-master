@@ -26,6 +26,12 @@ SVC_PORTS = {
     "djfinancemanage": int(os.getenv("API_TEST_PORT_DJFINANCEMANAGE", "30852")),
 }
 
+# IP 直连模式下，部分 /djsupplier 前缀的网关业务接口（如 marketingActivity、
+# 部分 DJEASYORDER goal/manage/szorder 路径）并未在裸 NodePort 上暴露，直连会返回 404；
+# 这类接口在 404 时自动回退到网关域名重试（BaseAPI.request 负责）。
+# 网关域名与业务接口同源，仅暴露范围不同；可按需通过环境变量覆盖。
+gateway_base_url = os.getenv("API_TEST_GATEWAY_URL", "https://suppliertest.cpsol.net")
+
 
 def svc_url(service_name, scheme="http"):
     """返回指定服务在阿里云后端的直连基础地址（含协议、IP、端口，末尾无斜杠）。

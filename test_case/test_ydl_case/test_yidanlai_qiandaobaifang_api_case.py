@@ -70,3 +70,56 @@ class TestQiandaoBaifang:
         assert data.get("noVisitForOver90Days", -1) >= 0, f"超90天未拜访数应>=0, 实际={data.get('noVisitForOver90Days')}"
 
         allure.attach(str(data), "拜访概览数据", allure.attachment_type.TEXT)
+
+    # ==================== AB: 业务员工作台（/app/djcockpit/easyorder/salesman） ====================
+
+    @allure.story("签到拜访 - 业务员工作台")
+    def test_ydl_AB_salesman_workbench(self):
+        """业务员工作台：判断合作业务员取supplierId→销售概览/订单产品数/购物车/待办/客户概览/今日产品"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        api = self._get_api()
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        # 1. 前置：判断合作业务员，动态获取 supplierId
+        res_judge = api.salesman_judge_cooperation({})
+        assert res_judge.get("success") is True, f"判断合作业务员失败, 返回={res_judge}"
+        supplier_list = res_judge.get("data", {}).get("supplierList") or []
+        assert supplier_list, f"supplierList不应为空, 返回={res_judge.get('data')}"
+        supplier_id = supplier_list[0].get("supplierId")
+        date_payload = {"supplierId": supplier_id, "beginDate": today, "endDate": today, "type": "1"}
+        page_payload = {"supplierId": supplier_id, "pageNo": "1", "pageSize": "5"}
+
+        # 2. 销售概览：包含目标/销售额/面积
+        res_overview = api.salesman_get_sale_overview(date_payload)
+        assert res_overview.get("code") == "10001200", f"销售概览失败, 返回={res_overview}"
+        ov = res_overview.get("data", {})
+        assert "saleAmount" in ov and "saleArea" in ov, f"销售概览应包含saleAmount/saleArea, data={ov}"
+
+        # 3. 订单产品数量：data 为整型
+        res_num = api.salesman_get_order_product_num(date_payload)
+        assert res_num.get("code") == "10001200", f"订单产品数量失败, 返回={res_num}"
+        assert isinstance(res_num.get("data"), int), f"订单产品数量data应为int, 实际={res_num.get('data')}"
+
+        # 4. 购物车列表：list 结构
+        res_cart = api.salesman_get_shopping_cart_list(page_payload)
+        assert res_cart.get("code") == "10001200", f"购物车列表失败, 返回={res_cart}"
+        assert isinstance(res_cart.get("data", {}).get("list"), list), f"购物车data.list应为list, 返回={res_cart.get('data')}"
+
+        # 5. 待办列表：list 结构
+        res_todo = api.salesman_get_to_be_completed_list(page_payload)
+        assert res_todo.get("code") == "10001200", f"待办列表失败, 返回={res_todo}"
+        assert isinstance(res_todo.get("data", {}).get("list"), list), f"待办data.list应为list, 返回={res_todo.get('data')}"
+
+        # 6. 客户概览：包含 list
+        res_cust = api.salesman_get_customer_overview({**date_payload, "pageNo": 1, "pageSize": 9999})
+        assert res_cust.get("code") == "10001200", f"客户概览失败, 返回={res_cust}"
+        assert "list" in res_cust.get("data", {}), f"客户概览应包含list, data={res_cust.get('data')}"
+
+        # 7. 今日产品列表：list 结构
+        res_prod = api.salesman_get_today_product_list({**date_payload, "dimension": "product", "pageNo": 1, "pageSize": 20})
+        assert res_prod.get("code") == "10001200", f"今日产品列表失败, 返回={res_prod}"
+        assert isinstance(res_prod.get("data", {}).get("list"), list), f"今日产品data.list应为list, 返回={res_prod.get('data')}"
+
+        allure.attach(str(ov), "业务员销售概览", allure.attachment_type.TEXT)

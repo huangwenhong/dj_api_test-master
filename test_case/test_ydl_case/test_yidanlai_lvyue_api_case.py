@@ -19,6 +19,15 @@ def _date_range(days_back=20):
     return (now - timedelta(days=days_back)).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
 
 
+def _month_range(months_back=2):
+    """计算近 N 个月的日期范围 (yyyy-MM)，用于月粒度趋势接口"""
+    now = datetime.now()
+    begin = now.replace(day=1)
+    total = now.year * 12 + (now.month - 1) - months_back
+    begin = begin.replace(year=total // 12, month=total % 12 + 1)
+    return begin.strftime("%Y-%m"), now.strftime("%Y-%m")
+
+
 # ==================== APP 履约 ====================
 
 @allure.feature("APP履约")
@@ -76,9 +85,9 @@ class TestLvyue:
         # 1. 计算日期范围
         begin_date, end_date = _date_range()
 
-        # 2. 履约订单查询（getOrderList.do, 必填 timeType+filterType）
+        # 2. 履约订单查询（getOrderList.do, 必填 timeType+filterType+type(日期粒度)）
         res_list = LY.get_order_list(
-            timeType="0", filterType=1, beginDate=begin_date, endDate=end_date,
+            timeType="0", filterType=1, type=1, beginDate=begin_date, endDate=end_date,
         )
         _ok(res_list, "履约订单查询失败")
         list_data = res_list.get("data", {})
@@ -90,7 +99,7 @@ class TestLvyue:
 
         # 3. 只查未送达订单（notDelivered=True）
         res_not_delivered = LY.get_order_list(
-            timeType="0", filterType=1, notDelivered=True,
+            timeType="0", filterType=1, notDelivered=True, type=1,
             beginDate=begin_date, endDate=end_date,
         )
         _ok(res_not_delivered, "履约订单查询-只查未送达失败")
@@ -120,12 +129,14 @@ class TestLvyue:
         # IsAI: True
         LY = self._get_api()
 
-        # 1. 计算日期范围
+        # 1. 计算日期范围：趋势按天粒度需 yyyy-MM-dd；区域按日需 yyyy-MM-dd
         begin_date, end_date = _date_range()
+        # 交付趋势接口 getDeliveryTrend 的 type 为日期粒度(3=按月), 且日期需为 yyyy-MM
+        begin_month, end_month = _month_range()
 
-        # 2. 获取交付趋势-送达维度（getDeliveryTrend.do, 必填 dimensionType）
+        # 2. 获取交付趋势-送达维度（getDeliveryTrend.do, 必填 dimensionType+type）
         res_trend = LY.get_delivery_trend(
-            dimensionType=1, beginDate=begin_date, endDate=end_date,
+            dimensionType=1, type=3, beginDate=begin_month, endDate=end_month,
         )
         _ok(res_trend, "获取交付趋势失败")
         trend_data = res_trend.get("data")
@@ -134,12 +145,14 @@ class TestLvyue:
 
         # 3. 获取交付趋势-出库维度（dimensionType=2）
         res_trend_out = LY.get_delivery_trend(
-            dimensionType=2, beginDate=begin_date, endDate=end_date,
+            dimensionType=2, type=3, beginDate=begin_month, endDate=end_month,
         )
         _ok(res_trend_out, "获取交付趋势-出库维度失败")
 
-        # 4. 获取区域交付（getRegionalDelivery.do）
-        res_region = LY.get_regional_delivery(beginDate=begin_date, endDate=end_date)
+        # 4. 获取区域交付（getRegionalDelivery.do, 必填 type=1 日期粒度）
+        res_region = LY.get_regional_delivery(
+            type=1, beginDate=begin_date, endDate=end_date,
+        )
         _ok(res_region, "获取区域交付失败")
         region_data = res_region.get("data")
         assert isinstance(region_data, (dict, list)), \
@@ -147,6 +160,6 @@ class TestLvyue:
 
         # 5. 区域交付-按过滤类型（filterType: 1超24H 2超48H）
         res_region_filter = LY.get_regional_delivery(
-            filterType=1, beginDate=begin_date, endDate=end_date,
+            filterType=1, type=1, beginDate=begin_date, endDate=end_date,
         )
         _ok(res_region_filter, "获取区域交付-过滤类型失败")

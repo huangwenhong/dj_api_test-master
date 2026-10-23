@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-"""CAS 单点登录接口封装。
+"""CAS 单点登录接口封装 + APP 端易单来单步登录。
 
-登录流程（三步）：
+Web 端登录流程（三步）：
 1. weblogin.do       → 用账号密码换取 onceToken
 2. casTokenLogin.do  → 用 onceToken 换取业务 token
 3. exchangetoken.do  → 用 onceToken 换取最终 token（部分场景可选）
+
+APP 端登录流程（单步）：
+1. easyorderlogin.do → 用账号密码直接登录，返回用户信息（不返回 token，token 在 Set-Cookie）
 """
 
 import allure
@@ -59,11 +62,16 @@ class LoginAPI:
         return resp.json()
 
     @allure.step("第三步：exchangetoken 换取最终 token")
-    def exchange_token(self, onceToken=""):
-        """CAS exchangetoken：用 onceToken 换取最终 token"""
+    def exchange_token(self, onceToken="", appName="DJSUPPLIER"):
+        """CAS exchangetoken：用 onceToken 换取最终 token。
+
+        注意：部分域名（如 smart.onlinecps.cn 智能体域）exchangetoken 必须同时携带
+        appName，仅传 onceToken 会返回 10001316 参数错误；因此这里显式传入 appName。
+        """
         url = f"{self.base_url}{AUTH_PREFIX}/exchangetoken.do"
         payload = {
             "onceToken": onceToken,
+            "appName": appName,
         }
         resp = self.session.post(url, json=payload)
         resp.raise_for_status()
@@ -102,8 +110,8 @@ class LoginAPI:
         r2 = self.cas_token_login(appName, once_token)
         print(f"[登录] casTokenLogin 响应码: {r2.get('code', '') if isinstance(r2, dict) else r2}")
 
-        # 第三步：exchangetoken
-        r3 = self.exchange_token(once_token)
+        # 第三步：exchangetoken（需同时传 appName，部分域名少传会报 10001316）
+        r3 = self.exchange_token(once_token, appName)
         print(f"[登录] exchangetoken 响应码: {r3.get('code', '') if isinstance(r3, dict) else r3}")
 
         # 从 session cookies 中提取 token（登录流程通过 Set-Cookie 设置）
@@ -124,6 +132,42 @@ class LoginAPI:
                     break
 
         return token, {"weblogin": r1, "casTokenLogin": r2, "exchangetoken": r3}
+
+    @allure.step("APP 端易单来单步登录")
+    def app_easyorder_login(self, name, password, appname="DJEASYORDER", version="ios_2.3.12"):
+        """APP 端易单来单步登录接口（非 CAS 三步）。
+
+        Args:
+            name: 登录账号（工号或手机号）
+            password: 明文密码（方法内部自动 MD5 加密）
+            appname: 应用名称，默认 DJEASYORDER
+            version: APP 版本，默认 ios_2.3.12
+
+        Returns:
+            dict: 接口响应 JSON，结构示例：
+                {
+                    "code": "10001200",
+                    "msg": "请求成功！",
+                    "data": [{"pushID": "...", "userid": "...", "userIco": "...", "userName": "..."}],
+                    "success": true
+                }
+
+        Note:
+            - Content-Type 必须是 application/x-www-form-urlencoded（不是 application/json）
+            - 签名 headers（x-djcps-safe-sign 等）不是必须的，服务端不验证
+            - token 在 Set-Cookie header 里，通过 session.cookies.get("token") 获取
+        """
+        url = f"{self.base_url}/DJEASYORDER/easyorderlogin.do"
+        payload = {
+            "name": name,
+            "password": self._md5(password),
+            "appname": appname,
+            "version": version,
+        }
+        # ⚠️ 必须用 data=（form-encoded），不能用 json=
+        resp = self.session.post(url, data=payload)
+        resp.raise_for_status()
+        return resp.json()
 
 
 def login_and_update_config(userName, password, appName="DJSUPPLIER", config_path=None):

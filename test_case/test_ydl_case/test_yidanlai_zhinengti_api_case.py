@@ -694,3 +694,45 @@ class TestZhinengti:
         allure.attach(str(onshelf_data), "上架结果", allure.attachment_type.TEXT)
         allure.attach(str(examine_data), "产品审核详情", allure.attachment_type.TEXT)
         allure.attach(str(plan_list[0]), "价格方案", allure.attachment_type.TEXT)
+
+    # ==================== AH: 首页加载（会话与置顶消息） ====================
+
+    @allure.story("智能体 - 首页加载会话与置顶消息")
+    def test_ydl_AH_agent_home_load(self):
+        """智能体首页加载：获取全部会话列表→获取置顶消息列表→用首个会话ID串联获取会话消息"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        api = self._get_api()
+
+        # 1. 获取全部会话列表（v2）
+        res_conv = api.get_all_conversations({"version": "2.3.9"})
+        assert res_conv.get("code") == "10001200", f"获取会话列表失败, code={res_conv.get('code')}, msg={res_conv.get('msg')}"
+        assert res_conv.get("success") is True, f"success应为True, 实际={res_conv.get('success')}"
+
+        # 2. 验证会话列表结构（data 为 dict，内含 data 列表）
+        conv_data = res_conv.get("data", {})
+        assert isinstance(conv_data, dict), f"会话data应为dict, 实际={type(conv_data)}"
+        conv_list = conv_data.get("data", [])
+        assert isinstance(conv_list, list), f"会话列表应为list, 实际={type(conv_list)}"
+        assert len(conv_list) > 0, "会话列表不应为空"
+
+        # 3. 验证会话项关键字段
+        first_conv = conv_list[0]
+        assert first_conv.get("id"), f"会话项应包含id, 实际={first_conv}"
+        conversation_id = first_conv.get("id")
+
+        # 4. 获取置顶消息列表
+        res_top = api.get_all_top_message_list({})
+        assert res_top.get("code") == "10001200", f"获取置顶消息列表失败, code={res_top.get('code')}, msg={res_top.get('msg')}"
+        top_list = res_top.get("data", [])
+        assert isinstance(top_list, list), f"置顶消息应为list, 实际={type(top_list)}"
+        assert len(top_list) > 0, "置顶消息列表不应为空"
+        assert top_list[0].get("id"), f"置顶消息项应包含id, 实际={top_list[0]}"
+
+        # 5. 依赖串联：用首个会话ID获取该会话消息，验证会话-消息链路
+        res_msg = api.get_all_message({"conversationId": conversation_id, "limit": 20})
+        assert res_msg.get("code") == "10001200", f"获取会话消息失败, code={res_msg.get('code')}, msg={res_msg.get('msg')}"
+
+        allure.attach(str(conv_list[:3]), "会话列表(前3条)", allure.attachment_type.TEXT)
+        allure.attach(str(top_list[:3]), "置顶消息(前3条)", allure.attachment_type.TEXT)

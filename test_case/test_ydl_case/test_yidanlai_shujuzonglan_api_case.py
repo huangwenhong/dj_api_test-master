@@ -551,3 +551,73 @@ class TestDataOverview:
                 _eq("目标差距-月月活", f"{ms}差值=达成-目标", ma_reach - float(ma.get("value") or 0), ma.get("dif"))
                 if ms == month:
                     _eq("目标差距-月月活", "本月月活达成=下单客户数", m_entry.get("customerNum"), ma_reach)
+
+    # ==================== AL: APP 经营管理看板（/app/djcockpit/easyorder/manage） ====================
+
+    @allure.story("数据总览 - APP经营管理看板")
+    def test_ydl_SZL_AL_cockpit_manage_board(self):
+        """APP经营管理看板：动态取supplierId/orgId→销售概览/区域/重点/产品/业务员/下级组织/供应商/订单分类/购物车待付/产品供应商数"""
+        # Author: Author
+        # Create Date: 2026-10-22
+        # IsAI: True
+        from test_case.page_api.ydl.qiandaobaifang_api import QiandaoBaifangAPI
+        api = ShujuzonglanAPI()
+        today = date.today().strftime("%Y-%m-%d")
+
+        # 1. 前置：判断合作业务员，动态获取 supplierId / orgId
+        res_judge = QiandaoBaifangAPI().salesman_judge_cooperation({})
+        assert res_judge.get("success") is True, f"判断合作业务员失败, 返回={res_judge}"
+        judge_data = res_judge.get("data", {})
+        supplier_list = judge_data.get("supplierList") or []
+        org_list = judge_data.get("orgList") or []
+        assert supplier_list, f"supplierList不应为空, 返回={judge_data}"
+        assert org_list, f"orgList不应为空, 返回={judge_data}"
+        supplier_id = supplier_list[0].get("supplierId")
+        org_id = org_list[0].get("orgId")
+        base_payload = {
+            "orgId": org_id,
+            "supplierId": supplier_id,
+            "beginDate": today,
+            "endDate": today,
+            "type": "1",
+            "dataOwnership": "",
+        }
+
+        # 2. 销售概览：返回金额/面积等核心指标
+        res_overview = api.manage_get_sale_overview(base_payload)
+        _ok(res_overview, "销售概览查询失败")
+        ov = res_overview.get("data", {})
+        assert "saleAmount" in ov and "saleArea" in ov, f"销售概览应包含saleAmount/saleArea, data={ov}"
+
+        # 3. 区域销售信息：list 结构
+        for method, name in (
+                (api.manage_get_region_sale_info, "区域销售信息"),
+                (api.manage_get_key_region_sale_info, "重点区域销售信息"),
+                (api.manage_get_product_sale_info, "产品销售信息"),
+                (api.manage_get_salesman_list_info, "业务员列表信息"),
+                (api.manage_get_subordinate_org_sale_info, "下级组织销售信息"),
+                (api.manage_get_supplier_list, "供应商列表"),
+        ):
+            res = method(base_payload)
+            _ok(res, f"{name}查询失败")
+            assert isinstance(res.get("data", {}).get("list"), list), f"{name}data.list应为list, 返回={res.get('data')}"
+
+        # 4. 订单分类：返回 own/platform
+        res_class = api.manage_get_order_class(base_payload)
+        _ok(res_class, "订单分类查询失败")
+        class_data = res_class.get("data", {})
+        assert "own" in class_data and "platform" in class_data, f"订单分类应包含own/platform, data={class_data}"
+
+        # 5. 购物车与待付款：包含购物车/待付款金额
+        res_cart = api.manage_get_shopping_cart_wait_pay_info(base_payload)
+        _ok(res_cart, "购物车与待付款查询失败")
+        cart_data = res_cart.get("data", {})
+        assert "shoppingCartAmount" in cart_data and "waitPayAmount" in cart_data, \
+            f"购物车待付应包含shoppingCartAmount/waitPayAmount, data={cart_data}"
+
+        # 6. 产品供应商数量：list+total
+        res_psc = api.manage_get_product_supplier_count(base_payload)
+        _ok(res_psc, "产品供应商数量查询失败")
+        assert "list" in res_psc.get("data", {}), f"产品供应商数量应包含list, data={res_psc.get('data')}"
+
+        allure.attach(str(ov), "销售概览", allure.attachment_type.TEXT)

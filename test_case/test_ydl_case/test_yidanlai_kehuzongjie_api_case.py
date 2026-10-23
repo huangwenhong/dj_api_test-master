@@ -5,6 +5,7 @@ import allure
 import pytest
 from datetime import datetime, timedelta
 from test_case.page_api.ydl.kehu_zongjie_api import KehuZongjieAPI
+from test_case.page_api.ydl.mubiao_api import MubiaoAPI
 
 KZ = KehuZongjieAPI()
 
@@ -13,6 +14,31 @@ def _ok(res, msg="接口返回异常"):
     """校验接口 code=10001200 且 success=True"""
     assert res.get("code") == "10001200", f"{msg}, 接口返回={res}"
     assert res.get("success") is True, f"{msg} success不为True, 接口返回={res}"
+
+
+def _resolve_supplier_and_customer():
+    """动态解析当前账号可访问的真实 supplierId 与 customerId。
+
+    旧硬编码的示例供应商(ee3b...)/客户(026c...)在当前环境已失效：客户预警概览
+    各状态均为空，getCustomerInfoById 返回 10001506。这里改为从目标管理供应商列表
+    取账号自身联合供应商(unionSupplier=1)，再按客户预警状态取首个非空客户，
+    确保使用账号真正有权限的数据。返回 (supplier_id, customer_id)；无数据时对应项为 None。
+    """
+    res = MubiaoAPI().get_supplier_info_no_auth()
+    sup_list = (res.get("data") or {}).get("list", []) or []
+    union = next((s for s in sup_list if str(s.get("unionSupplier")) == "1"), None)
+    supplier_id = (union or (sup_list[0] if sup_list else {})).get("supplierId")
+    if not supplier_id:
+        return None, None
+    end_m = datetime.now().strftime("%Y-%m")
+    begin_m = (datetime.now() - timedelta(days=180)).strftime("%Y-%m")
+    for state in ("loss", "active", "add", "activate", "no_order"):
+        rw = KZ.get_customer_warn_overview(
+            supplierId=supplier_id, beginDate=begin_m, endDate=end_m, state=state)
+        wl = (rw.get("data") or {}).get("list", []) or []
+        if wl:
+            return supplier_id, (wl[0].get("customerId") or wl[0].get("id"))
+    return supplier_id, None
 
 
 # ==================== APP-客户总结 ====================
@@ -76,9 +102,9 @@ class TestKehuZongjie:
         # IsAI: True
 
         org_id = "400"
-        supplier_id = "ee3b25465f0b11edb9b5000c29f98159"
-        # 使用抓包中的示例客户ID
-        customer_id = "026c28a8c4004d119c1778fca646d61e"
+        # 动态解析账号自身联合供应商及其一个真实客户ID（硬编码示例供应商/客户已失效，返回 10001506）
+        supplier_id, customer_id = _resolve_supplier_and_customer()
+        assert customer_id, "当前账号无可用客户数据, 无法校验客户详情"
 
         # 1. 根据ID获取客户详情
         res = KZ.get_customer_info_by_id(
@@ -128,8 +154,9 @@ class TestKehuZongjie:
         # IsAI: True
 
         org_id = "400"
-        supplier_id = "ee3b25465f0b11edb9b5000c29f98159"
-        customer_id = "026c28a8c4004d119c1778fca646d61e"
+        # 动态解析账号自身联合供应商及其一个真实客户ID（硬编码示例供应商/客户已失效）
+        supplier_id, customer_id = _resolve_supplier_and_customer()
+        assert customer_id, "当前账号无可用客户数据, 无法校验客户视图"
         end_date = datetime.now().strftime("%Y-%m")
         begin_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m")
 

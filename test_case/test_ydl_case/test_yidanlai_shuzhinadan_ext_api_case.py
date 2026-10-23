@@ -154,7 +154,7 @@ class TestShuzhinadanBoardInit:
 
     @allure.story("作战看板 - 产品/客户策略清单")
     def test_ydl_AC_product_and_customer_strategy_list(self):
-        """策略清单：关注产品ID→产品策略清单→客户策略清单→客户数量统计"""
+        """策略清单：产品策略清单→客户策略清单→客户数量统计"""
         # Author: Author
         # Create Date: 2026-09-20
         # IsAI: True
@@ -168,23 +168,19 @@ class TestShuzhinadanBoardInit:
         supplier_id = union_rows[0].get("supplierId")
         supplier_name = union_rows[0].get("supplierName")
 
-        # 1. 查询关注产品ID列表（产品策略清单的入参来源）
-        res_focus = shuzhinadan_api.get_focus_product_count(supplierId=supplier_id, supplierName=supplier_name)
-        assert res_focus.get("code") == "10001200", f"查询关注产品数量, 接口异常{res_focus}"
-        product_ids = res_focus.get("data", {}).get("productIdList", [])
-        assert isinstance(product_ids, list)
-
-        # 2. 按关注产品ID分页查询产品策略清单
-        res_ps = shuzhinadan_api.get_product_strategy(supplierId=supplier_id, supplierName=supplier_name,
-                                         productIdList=product_ids)
+        # 1. 分页查询产品策略清单（web 真实入口为全量策略清单 focusFlag=n）
+        #    2026-10-23 抓包确认：账号无关注产品数据(getFocusProductCount 返回 productIdList=[])，
+        #    产品策略清单不再以关注产品ID过滤，改为直接拉取策略清单并从中提取产品ID。
+        res_ps = shuzhinadan_api.get_product_strategy(supplierId=supplier_id, supplierName=supplier_name)
         assert res_ps.get("code") == "10001200", f"分页查询产品策略清单, 接口异常{res_ps}"
         ps_data = res_ps.get("data", {})
         assert ps_data.get("total", -1) >= 0, f"产品策略清单 total 异常{res_ps}"
         ps_rows = ps_data.get("list", [])
-        assert isinstance(ps_rows, list)
-        for row in ps_rows:
-            assert row.get("productId") in product_ids, \
-                f"产品策略清单出现未关注产品 {row.get('productId')}, 期望范围{product_ids}"
+        assert isinstance(ps_rows, list) and ps_rows, f"产品策略清单为空, 接口异常{res_ps}"
+
+        # 2. 从策略清单提取产品ID列表（客户数量统计的入参来源）
+        product_ids = [row.get("productId") for row in ps_rows if row.get("productId")]
+        assert product_ids, f"产品策略清单未返回有效 productId, 接口异常{res_ps}"
 
         # 3. 分页查询客户策略清单
         res_cs = shuzhinadan_api.get_customer_strategy(supplierId=supplier_id, supplierName=supplier_name)
@@ -192,8 +188,7 @@ class TestShuzhinadanBoardInit:
         assert res_cs.get("data", {}).get("total", -1) >= 0, f"客户策略清单 total 异常{res_cs}"
         assert isinstance(res_cs.get("data", {}).get("list"), list)
 
-        # 4. 按首个关注产品查询客户数量统计
-        assert product_ids, f"关注产品ID列表为空, 无法查询客户数量统计, 接口异常{res_focus}"
+        # 4. 按首个产品查询客户数量统计
         res_count = shuzhinadan_api.get_customer_count(productId=product_ids[0],
                                           supplierId=supplier_id, supplierName=supplier_name)
         assert res_count.get("code") == "10001200", f"查询客户数量统计, 接口异常{res_count}"
@@ -221,17 +216,17 @@ class TestShuzhinadanProductDetail:
         supplier_id = union_rows[0].get("supplierId")
         supplier_name = union_rows[0].get("supplierName")
 
-        # 1. 查询关注产品，取第一个产品ID作为详情页入参
-        res_focus = shuzhinadan_api.get_focus_product_count(supplierId=supplier_id, supplierName=supplier_name)
-        assert res_focus.get("code") == "10001200", f"查询关注产品数量, 接口异常{res_focus}"
-        product_ids = res_focus.get("data", {}).get("productIdList", [])
-        assert product_ids, f"关注产品ID列表为空, 无法执行产品详情链路, 接口异常{res_focus}"
-        product_id = product_ids[0]
-
-        # 2. 查询产品详情选项，确认目标产品在选项中
+        # 1. 查询产品详情选项（产品详情页真实入口），取首个产品ID作为详情页入参
+        #    2026-10-23 web 抓包确认：产品详情页实际由产品下拉选项(getProductOptionNoAuth)进入，
+        #    且账号无关注产品数据(getFocusProductCount 返回 productIdList=[])，故按真实链路改用产品选项取 productId。
         res_option = shuzhinadan_api.get_product_option(supplierId=supplier_id, supplierName=supplier_name)
         assert res_option.get("code") == "10001200", f"查询产品详情选项, 接口异常{res_option}"
-        assert isinstance(res_option.get("data", {}).get("list"), list)
+        # 2. 校验选项结构并提取首个 productId
+        option_rows = res_option.get("data", {}).get("list", [])
+        assert isinstance(option_rows, list) and option_rows, \
+            f"产品详情选项为空, 无法执行产品详情链路, 接口异常{res_option}"
+        product_id = option_rows[0].get("productId")
+        assert product_id, f"产品详情选项首行缺少 productId, 接口异常{res_option}"
 
         # 3. 查询产品详情基础信息
         res_detail = shuzhinadan_api.get_product_detail_page(productId=product_id,
