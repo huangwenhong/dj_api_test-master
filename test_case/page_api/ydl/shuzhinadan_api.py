@@ -1228,7 +1228,7 @@ class ShuzhinadanAPI(BaseAPI):
     # ==================== 策略效果分析 ====================
 
     @allure.step("查询策略效果总览")
-    def get_strategy_effect_overview(self, supplierId, startDate=None, endDate=None,
+    def get_strategy_effect_overview(self, supplierId, startDate=None, endDate=None, dateType="create_time",
                                      dataOwnership="", status_code=200, **kwargs):
         """查询策略效果总览（策略总数/日均面积/策略接单量）"""
         # Author: Author
@@ -1238,6 +1238,7 @@ class ShuzhinadanAPI(BaseAPI):
         payload = {
             "dataOwnership": dataOwnership,
             "supplierId": supplierId,
+            "dateType": dateType,
             "startDate": startDate or _month_start(),
             "endDate": endDate or _today(),
         }
@@ -1247,7 +1248,7 @@ class ShuzhinadanAPI(BaseAPI):
         return res
 
     @allure.step("查询产品策略效果总览")
-    def get_product_strategy_effect_overview(self, supplierId, startDate=None, endDate=None,
+    def get_product_strategy_effect_overview(self, supplierId, startDate=None, endDate=None, dateType="create_time",
                                              dataOwnership="", status_code=200, **kwargs):
         """查询产品策略效果总览（活动产品数/参与客户数/优惠金额等）"""
         # Author: Author
@@ -1257,6 +1258,7 @@ class ShuzhinadanAPI(BaseAPI):
         payload = {
             "dataOwnership": dataOwnership,
             "supplierId": supplierId,
+            "dateType": dateType,
             "startDate": startDate or _month_start(),
             "endDate": endDate or _today(),
         }
@@ -1266,7 +1268,7 @@ class ShuzhinadanAPI(BaseAPI):
         return res
 
     @allure.step("查询客户策略效果总览")
-    def get_customer_strategy_effect_overview(self, supplierId, startDate=None, endDate=None,
+    def get_customer_strategy_effect_overview(self, supplierId, startDate=None, endDate=None, dateType="create_time",
                                               dataOwnership="", status_code=200, **kwargs):
         """查询客户策略效果总览（发券数/用券率/覆盖客户数等）"""
         # Author: Author
@@ -1276,6 +1278,7 @@ class ShuzhinadanAPI(BaseAPI):
         payload = {
             "dataOwnership": dataOwnership,
             "supplierId": supplierId,
+            "dateType": dateType,
             "startDate": startDate or _month_start(),
             "endDate": endDate or _today(),
         }
@@ -1285,7 +1288,7 @@ class ShuzhinadanAPI(BaseAPI):
         return res
 
     @allure.step("查询客户策略分段占比")
-    def get_customer_strategy_segments_ratio(self, supplierId, startDate=None, endDate=None,
+    def get_customer_strategy_segments_ratio(self, supplierId, startDate=None, endDate=None, dateType="create_time",
                                              dataOwnership="", status_code=200, **kwargs):
         """查询客户策略基本盘/机会单/其他单分段占比"""
         # Author: Author
@@ -1295,6 +1298,7 @@ class ShuzhinadanAPI(BaseAPI):
         payload = {
             "dataOwnership": dataOwnership,
             "supplierId": supplierId,
+            "dateType": dateType,
             "startDate": startDate or _month_start(),
             "endDate": endDate or _today(),
         }
@@ -1304,7 +1308,7 @@ class ShuzhinadanAPI(BaseAPI):
         return res
 
     @allure.step("查询客户策略转化漏斗")
-    def get_customer_strategy_conversion_funnel(self, supplierId, startDate=None, endDate=None,
+    def get_customer_strategy_conversion_funnel(self, supplierId, startDate=None, endDate=None, dateType="create_time",
                                                 dataOwnership="", status_code=200, **kwargs):
         """查询客户策略覆盖-机会-下单转化漏斗"""
         # Author: Author
@@ -1314,6 +1318,7 @@ class ShuzhinadanAPI(BaseAPI):
         payload = {
             "dataOwnership": dataOwnership,
             "supplierId": supplierId,
+            "dateType": dateType,
             "startDate": startDate or _month_start(),
             "endDate": endDate or _today(),
         }
@@ -1323,7 +1328,7 @@ class ShuzhinadanAPI(BaseAPI):
         return res
 
     @allure.step("查询产品接单表现")
-    def get_product_order_performance(self, supplierId, startDate=None, endDate=None,
+    def get_product_order_performance(self, supplierId, startDate=None, endDate=None, dateType="create_time",
                                       dataOwnership="", status_code=200, **kwargs):
         """查询策略效果分析中的产品接单表现列表"""
         # Author: Author
@@ -1333,6 +1338,7 @@ class ShuzhinadanAPI(BaseAPI):
         payload = {
             "dataOwnership": dataOwnership,
             "supplierId": supplierId,
+            "dateType": dateType,
             "startDate": startDate or _month_start(),
             "endDate": endDate or _today(),
         }
