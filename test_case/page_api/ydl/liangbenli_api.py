@@ -147,7 +147,9 @@ class LiangbenliAPI(BaseAPI):
             payload["paperCode"] = paperCode
         error_msg = kwargs.pop("error_msg", "人工测算表导出失败")
         payload.update(kwargs)
-        return self.post(url, json=payload, status_code=status_code, error_msg=error_msg)
+        # 导出返回 Excel 二进制流，需返回原始 response，避免按 JSON 解析报错
+        return self.post(url, json=payload, status_code=status_code,
+                         error_msg=error_msg, return_response=True)
 
     @allure.step("下载人工测算表导入模板")
     def get_manual_calculate_template(self, supplierId=None, status_code=200, **kwargs):
@@ -165,7 +167,9 @@ class LiangbenliAPI(BaseAPI):
             payload["supplierId"] = supplierId
         error_msg = kwargs.pop("error_msg", "下载人工测算表导入模板失败")
         payload.update(kwargs)
-        return self.post(url, json=payload, status_code=status_code, error_msg=error_msg)
+        # 模板为二进制文件流，需返回原始 response，避免按 JSON 解析报错
+        return self.post(url, json=payload, status_code=status_code,
+                         error_msg=error_msg, return_response=True)
 
     # ==================== 产品量价利 ====================
 

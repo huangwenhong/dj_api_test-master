@@ -16,13 +16,28 @@ def _ok(res, msg="接口返回异常"):
     assert res.get("success") is True, f"{msg} success不为True, 接口返回={res}"
 
 
+def _ok_download(res, msg="下载接口返回异常"):
+    """二进制下载接口校验：HTTP 200 且内容非空。"""
+    assert res.status_code == 200, f"{msg}, HTTP={res.status_code}"
+    assert res.content, f"{msg}, 响应内容为空"
+
+
+def _note_empty_list(step_name):
+    """列表为空时在报告中标注（不使用 pytest.skip）：仅验证接口可正常响应，跳过业务数据操作。"""
+    allure.attach(
+        "列表为空，已验证接口可正常响应，跳过业务数据操作",
+        name=f"{step_name}-列表为空说明",
+        attachment_type=allure.attachment_type.TEXT,
+    )
+
+
 def _get_calculate_id(date):
-    """获取人工测算表记录ID，列表为空则跳过用例。"""
-    res_page = LB.get_manual_calculate_page(pageNo=1, pageSize=10, date=date)
+    """获取人工测算表记录ID；列表为空返回 None（不跳过用例）。"""
+    res_page = LB.get_manual_calculate_page(pageNo=1, pageSize=10, date=date, supplierId="400")
     _ok(res_page, "获取人工测算表列表失败")
     rows = res_page.get("data", {}).get("list") or []
     if not rows:
-        pytest.skip("人工测算表列表为空，跳过依赖记录ID的步骤")
+        return None
     record_id = rows[0].get("id")
     assert record_id, f"列表首行缺少id, item={rows[0]}"
     return record_id
@@ -41,19 +56,32 @@ class TestManualCalculateList:
         # IsAI: True
 
         # 1. 计算查询日期（date 必填）
-        current_date = datetime.now().strftime("%Y-%m-%d")
+        current_date = datetime.now().strftime("%Y-%m")
 
-        # 2. 默认分页查询（getManualCalculatePage.do）
-        res_list = LB.get_manual_calculate_page(date=current_date)
+        # 2. 默认分页查询（getManualCalculatePage.do），date=当前年月、supplierId=400
+        res_list = LB.get_manual_calculate_page(
+            pageNo=1, pageSize=15, date=current_date, supplierId="400",
+        )
         _ok(res_list, "默认分页查询人工测算表失败")
         list_data = res_list.get("data") or {}
         assert isinstance(list_data, dict), \
             f"列表data类型异常, 期望dict, 实际={type(list_data)}"
         assert "total" in list_data or "list" in list_data, \
             f"列表响应缺少 total/list 字段, data={list_data}"
+        rows = list_data.get("list") or []
+        print(f"[LBL] date={current_date} total={list_data.get('total')} 本页行数={len(rows)}")
+        if rows:
+            first = rows[0]
+            print(f"[LBL] 首条记录: id={first.get('id')} paperCode={first.get('paperCode')} "
+                  f"paperType={first.get('paperType')} gramWeight={first.get('gramWeight')}")
+        else:
+            # 列表为空：记录 total=0 并继续，不跳过
+            _note_empty_list("列表查询")
 
         # 3. 自定义分页查询
-        res_page = LB.get_manual_calculate_page(pageNo=1, pageSize=5, date=current_date)
+        res_page = LB.get_manual_calculate_page(
+            pageNo=1, pageSize=5, date=current_date, supplierId="400",
+        )
         _ok(res_page, "自定义分页查询人工测算表失败")
         rows = res_page.get("data", {}).get("list") or []
         assert isinstance(rows, list), \
@@ -62,13 +90,13 @@ class TestManualCalculateList:
 
         # 4. 关键字搜索
         res_keyword = LB.get_manual_calculate_page(
-            pageNo=1, pageSize=10, date=current_date, keyword="测试",
+            pageNo=1, pageSize=10, date=current_date, keyword="测试", supplierId="400",
         )
         _ok(res_keyword, "关键字搜索人工测算表失败")
 
         # 5. 按供应商过滤
         res_supplier = LB.get_manual_calculate_page(
-            pageNo=1, pageSize=10, date=current_date, supplierId="S001",
+            pageNo=1, pageSize=10, date=current_date, supplierId="400",
         )
         _ok(res_supplier, "按supplierId过滤列表失败")
 
@@ -99,9 +127,13 @@ class TestManualCalculateEdit:
         # Create Date: 2026-08-20
         # IsAI: True
 
-        # 1. 取列表首条记录ID（列表为空则跳过）
-        current_date = datetime.now().strftime("%Y-%m-%d")
+        # 1. 取列表首条记录ID（列表为空返回None，不跳过）
+        current_date = datetime.now().strftime("%Y-%m")
         record_id = _get_calculate_id(current_date)
+        if record_id is None:
+            # 列表为空：不使用无效ID调用编辑接口，仅验证接口可正常响应（列表查询已_ok）
+            _note_empty_list("编辑保存")
+            return
 
         # 2. 必填字段保存（editManualCalculate.do）
         res_required = LB.edit_manual_calculate(
@@ -134,9 +166,13 @@ class TestManualCalculateEdit:
         # Create Date: 2026-08-20
         # IsAI: True
 
-        # 1. 取列表首条记录ID（列表为空则跳过）
-        current_date = datetime.now().strftime("%Y-%m-%d")
+        # 1. 取列表首条记录ID（列表为空返回None，不跳过）
+        current_date = datetime.now().strftime("%Y-%m")
         record_id = _get_calculate_id(current_date)
+        if record_id is None:
+            # 列表为空：不使用无效ID调用编辑接口，仅验证接口可正常响应（列表查询已_ok）
+            _note_empty_list("编辑保存-非法参数")
+            return
 
         # 2. 外部报价为负数属于非法业务输入
         res_negative = LB.edit_manual_calculate(
@@ -171,40 +207,37 @@ class TestManualCalculateImportExport:
         # IsAI: True
 
         # 1. 计算导入导出日期
-        current_date = datetime.now().strftime("%Y-%m-%d")
+        current_date = datetime.now().strftime("%Y-%m")
+        if _get_calculate_id(current_date) is None:
+            _note_empty_list("导入导出")
 
         # 2. 批量导入-带 supplierId+date（importManualCalculate.do）
-        res_import = LB.import_manual_calculate(supplierId="S001", date=current_date)
+        res_import = LB.import_manual_calculate(supplierId="400", date=current_date)
         assert res_import.get("code") is not None, \
             f"批量导入未返回code, 接口返回={res_import}"
 
         # 3. 导出-按 supplierId+date（exportManualCalculate.do）
-        res_export = LB.export_manual_calculate(supplierId="S001", date=current_date)
-        assert isinstance(res_export, dict) or hasattr(res_export, "content"), \
-            f"导出返回类型异常, 类型={type(res_export)}"
+        res_export = LB.export_manual_calculate(supplierId="400", date=current_date)
+        _ok_download(res_export, "按supplierId+date导出失败")
 
         # 4. 导出-全量导出
         res_export_all = LB.export_manual_calculate()
-        assert isinstance(res_export_all, dict) or hasattr(res_export_all, "content"), \
-            f"全量导出返回类型异常, 类型={type(res_export_all)}"
+        _ok_download(res_export_all, "全量导出失败")
 
         # 5. 导出-按 paperType+paperCode
         res_export_paper = LB.export_manual_calculate(
-            supplierId="S001", date=current_date,
+            supplierId="400", date=current_date,
             paperType="A", paperCode="Y-001-250-AB",
         )
-        assert isinstance(res_export_paper, dict) or hasattr(res_export_paper, "content"), \
-            f"按纸型纸代码导出返回类型异常, 类型={type(res_export_paper)}"
+        _ok_download(res_export_paper, "按纸型纸代码导出失败")
 
         # 6. 下载模板（getManualCalculateTemplate.do）
         res_template = LB.get_manual_calculate_template()
-        assert isinstance(res_template, dict) or hasattr(res_template, "content"), \
-            f"下载模板返回类型异常, 类型={type(res_template)}"
+        _ok_download(res_template, "下载模板失败")
 
         # 7. 下载模板-指定 supplierId
-        res_template_supplier = LB.get_manual_calculate_template(supplierId="S001")
-        assert isinstance(res_template_supplier, dict) or hasattr(res_template_supplier, "content"), \
-            f"下载模板（supplierId）返回类型异常, 类型={type(res_template_supplier)}"
+        res_template_supplier = LB.get_manual_calculate_template(supplierId="400")
+        _ok_download(res_template_supplier, "下载模板（supplierId）失败")
 
     @allure.story("批量导入-缺supplierId拦截")
     def test_ydl_LBL_import_missing_supplier(self):

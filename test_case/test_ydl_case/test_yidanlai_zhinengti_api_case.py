@@ -485,28 +485,37 @@ class TestZhinengti:
         assert "product_on_shelf_node" in res_stream or "intent_recognition_node" in res_stream, \
             f"AI应处理产品上架请求, 响应={str(res_stream)[:200]}"
 
-        # 2. 解析 SSE 流式响应，提取 dataId
+        # 2. 解析 SSE 流式响应，提取 dataId（组件记录ID）
+        # 实测 v2 submitStream 无 <json> 标记，dataId 位于结构化 data 行：
+        #   block.delta→delta.data.dataId / block.end→content.data.dataId / message.end→blocks[].content.data.dataId
+        def _pick_data_id(node):
+            """从 SSE 事件对象中递归提取组件记录ID dataId。"""
+            if not isinstance(node, dict):
+                return None
+            for key in ("delta", "content"):
+                block = node.get(key)
+                if isinstance(block, dict) and isinstance(block.get("data"), dict):
+                    vid = block["data"].get("dataId")
+                    if vid is not None:
+                        return vid
+            for blk in node.get("blocks") or []:
+                vid = _pick_data_id(blk)
+                if vid is not None:
+                    return vid
+            return None
+
         data_id = None
-        data_lines = []
-        in_json_block = False
         for line in res_stream.split("\n"):
             stripped = line.strip()
-            if stripped.startswith("data:"):
-                content = stripped[5:].strip()
-                if content == "<json>":
-                    in_json_block = True
-                    continue
-                if content == "</json>":
-                    in_json_block = False
-                    continue
-                if in_json_block:
-                    data_lines.append(content)
-        if data_lines:
+            if not stripped.startswith("data:"):
+                continue
             try:
-                obj = json.loads("".join(data_lines))
-                data_id = obj.get("dataId") or obj.get("businessBody", {}).get("dataId")
+                obj = json.loads(stripped[5:].strip())
             except (json.JSONDecodeError, AttributeError):
-                pass
+                continue
+            cand = _pick_data_id(obj)
+            if cand is not None:
+                data_id = cand
         assert data_id, "应从AI响应中提取到dataId"
 
         # 3. 轮询等待 AI 解析完成（组件状态变为 success）

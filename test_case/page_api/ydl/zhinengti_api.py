@@ -26,6 +26,9 @@ SMART_BASE_URL = "https://smart.onlinecps.cn"
 SMART_CPSOL_BASE_URL = "https://smart.cpsol.net"
 # 产品管理服务域名（阿里云环境）
 SUPPLIER_CPSOL_BASE_URL = "https://suppliertest.cpsol.net"
+# 产品上架状态标识（抓包实证：onoffStatus=2 且 auditStatus=6 ⇔ 已上架+审核通过，严格1:1）
+ONOFF_STATUS_ON = 2
+AUDIT_STATUS_PASSED = 6
 
 
 class ZhinengtiAPI(BaseAPI):
@@ -178,9 +181,14 @@ class ZhinengtiAPI(BaseAPI):
         self.headers["app-role"] = "salesman"
         # 使用主域名的 token
         original_token = self.cookies.get("token", "")
+        original_extra_token = self._extra_cookies.get("token", "")
         main_token = config.default_cookies.get("token", "")
         if main_token:
             self.cookies["token"] = main_token
+            # BaseAPI.get_base_request() 每次请求前会用 _extra_cookies 重同步 cookies，
+            # 必须同步覆盖 _extra_cookies，否则 token 会被还原成 __init__ 里的 smart_token，
+            # 导致主域名 djcockpit 接口鉴权失败（10001504 获取用户信息失败）。
+            self._extra_cookies["token"] = main_token
         try:
             url = f"{SALESMAN_PREFIX}/getSalesmanVisitOverview.do"
             payload = dict(payload_data)
@@ -191,6 +199,7 @@ class ZhinengtiAPI(BaseAPI):
             self.base_url = original_base_url
             self.headers = original_headers
             self.cookies["token"] = original_token
+            self._extra_cookies["token"] = original_extra_token
         return result
 
     # ==================== 产品上架（smart.cpsol.net） ====================
@@ -286,15 +295,21 @@ class ZhinengtiAPI(BaseAPI):
         self.headers = self.headers or {}
         self.headers["app-role"] = "salesman"
         original_token = self.cookies.get("token", "")
+        original_extra_token = self._extra_cookies.get("token", "")
         main_token = config.default_cookies.get("token", "")
         if main_token:
             self.cookies["token"] = main_token
+            # BaseAPI.get_base_request() 每次请求前会用 _extra_cookies 重同步 cookies，
+            # 必须同步覆盖 _extra_cookies，否则 token 会被还原成 __init__ 里的 smart_token，
+            # 导致主域名 djcockpit 接口鉴权失败（10001504 获取用户信息失败）。
+            self._extra_cookies["token"] = main_token
         try:
             result = self.post(url_path, json=payload, status_code=status_code, error_msg=error_msg)
         finally:
             self.base_url = original_base_url
             self.headers = original_headers
             self.cookies["token"] = original_token
+            self._extra_cookies["token"] = original_extra_token
         return result
 
     @allure.step("获取供应商信息")
@@ -417,7 +432,17 @@ class ZhinengtiAPI(BaseAPI):
 
     @allure.step("新增/更新价格方案审核")
     def add_price_plan_examine(self, payload_data, status_code=200, **kwargs):
-        """新增或更新价格方案（updateOrSave=1 新增，=2 更新）"""
+        """新增或更新价格方案（updateOrSave=1 新增，=2 更新）。
+
+        入参为"模型列表"（list of models），抓包实证（2026-10-26）每个模型必含：
+        groupGoodId/groupGoodName/supplierId/supplierName/marketingName(方案名)/
+        groupPrice(字符串)/minArea/minGroupPrice/groupareaList([{cityCode,groupArea,
+        checked,creator,type}])/salesStreets 与 salesStreetsOld([{cityCode,
+        unselectedStreets}])/errorAry/checkAll/isIndeterminate/bigAllright/
+        smallAllright/lengthAllright/widthAllright/minAreaOrStart/updateOrSave/
+        effect/auditorType；缺失伴随字段报 code=110001 操作失败，
+        groupPrice/minArea 为空报 code=10003001。
+        """
         # Author: Author
         # Create Date: 2026-09-02
         # IsAI: True
@@ -480,3 +505,201 @@ class ZhinengtiAPI(BaseAPI):
         error_msg = kwargs.pop("error_msg", "获取置顶消息列表失败")
         payload.update(kwargs)
         return self.post(url, json=payload, status_code=status_code, error_msg=error_msg)
+
+    # ==================== 产品上架闭环补充（suppliertest.cpsol.net） ====================
+
+    @allure.step("查询产品列表")
+    def load_list_products(self, payload_data, status_code=200, **kwargs):
+        """查询产品列表（支持按 productName 精确过滤，用于复用选品与上架后终态校验）"""
+        # Author: Author
+        # Create Date: 2026-10-26
+        # IsAI: True
+        url = f"{PRODUCT_PREFIX}/loadListProducts.do"
+        error_msg = kwargs.pop("error_msg", "查询产品列表失败")
+        return self._call_supplier_cpsol(url, payload_data, status_code, error_msg)
+
+    @allure.step("查询已有层型楞型列表")
+    def load_exist_layer_and_flute(self, payload_data, status_code=200, **kwargs):
+        """查询纸板团购上架的层数/楞型配置选项（产品上架造数的层数楞型来源）。
+        入参（抓包实证）：{"supplierId": "400"}；路径 /djsupplier/product/loadExistLayerAndFlute.do。
+        响应为双层信封：data.data.list = [{label:"5层", value:5, children:[{label:"BC瓦", value:1}, ...]}]，
+        节点 value=层数，children.value=楞型(fluteType)，实证 BC瓦 ⇔ value=1。
+        """
+        # Author: Author
+        # Create Date: 2026-10-26
+        # IsAI: True
+        url = f"{PRODUCT_PREFIX}/loadExistLayerAndFlute.do"
+        error_msg = kwargs.pop("error_msg", "查询层型楞型列表失败")
+        return self._call_supplier_cpsol(url, payload_data, status_code, error_msg)
+
+    @allure.step("新增产品")
+    def add_product(self, payload_data, status_code=200, **kwargs):
+        """新增产品（fid 为空串；带 fid 则为编辑态；响应不返回 fid，需回查列表取 fid）"""
+        # Author: Author
+        # Create Date: 2026-10-26
+        # IsAI: True
+        url = f"{PRODUCT_PREFIX}/addProduct.do"
+        error_msg = kwargs.pop("error_msg", "新增产品失败")
+        return self._call_supplier_cpsol(url, payload_data, status_code, error_msg)
+
+    @allure.step("查询单个产品详情")
+    def load_single_product(self, fid, status_code=200):
+        """根据产品ID查询单个产品详情（form-data 请求，复用产品规格的取数源）"""
+        # Author: Author
+        # Create Date: 2026-10-26
+        # IsAI: True
+        url = f"{PRODUCT_PREFIX}/loadSingleProduct.do"
+        return self._call_supplier_cpsol(url, {"fid": fid}, status_code,
+                                         "查询单个产品详情失败", as_form_data=True)
+
+    @allure.step("查询全部产品名称池")
+    def load_product_names(self, payload_data, status_code=200, **kwargs):
+        """查询供应商全部已有产品名称（用于产品命名查重）"""
+        # Author: Author
+        # Create Date: 2026-10-26
+        # IsAI: True
+        url = "/djsupplier/productManage/loadProductNames.do"
+        error_msg = kwargs.pop("error_msg", "查询产品名称池失败")
+        return self._call_supplier_cpsol(url, payload_data, status_code, error_msg)
+
+    @allure.step("查询材质名称列表")
+    def get_materials_name_list(self, payload_data, status_code=200, **kwargs):
+        """查询材质名称列表（抓包实证：本环境 data.list 返回 null，且部分公司无权限）。
+        因此产品上架造数不依赖本接口动态取材质，改为直接硬编码固定材质代码 B434C（见用例 PRODUCT_MATERIAL_CODE）。
+        入参使用 partnerId（非 supplierId），如 {"partnerId": "400"}。
+        """
+        # Author: Author
+        # Create Date: 2026-10-26
+        # IsAI: True
+        url = "/djsupplier/supplierConfig/getMaterialsNameList.do"
+        error_msg = kwargs.pop("error_msg", "查询材质名称列表失败")
+        return self._call_supplier_cpsol(url, payload_data, status_code, error_msg)
+
+    def find_product_by_name(self, product_name, supplier_id, key_area="3303", status_code=200):
+        """按产品名称精确回查产品列表，返回匹配的产品项；未找到返回 None"""
+        # Author: Author
+        # Create Date: 2026-10-26
+        # IsAI: True
+        payload = {
+            "keyArea": key_area, "supplierId": supplier_id,
+            "auditStatus": 0, "onoffStatus": 0, "marketingChannelJson": "",
+            "pageSize": 15, "pageNum": 1, "version": "1.0",
+            "layer": None, "fluteType": None,
+            "productName": product_name, "productType": ""
+        }
+        res = self.load_list_products(payload, status_code)
+        if res.get("code") != "10001200":
+            return None
+        for item in (res.get("data") or {}).get("list") or []:
+            if item.get("productName") == product_name:
+                return item
+        return None
+
+    @allure.step("查询供应商可售城市区域")
+    def find_city_area(self, oa_id, key_area="3303", status_code=200):
+        """查询供应商可售城市区域列表（form-data 请求 oaId=supplierId, keyArea）
+        返回 data.list 每项含 cityName/cityCode，cityCode 即新增产品 lists 的 listFgroupareaids
+        """
+        # Author: Author
+        # Create Date: 2026-10-26
+        # IsAI: True
+        url = "/djsupplier/productManage/findCityArea.do"
+        return self._call_supplier_cpsol(url, {"oaId": oa_id, "keyArea": key_area}, status_code,
+                                         "查询可售城市区域失败", as_form_data=True)
+
+    # ==================== OSS 图片直传（产品主图/详情图上传） ====================
+
+    @allure.step("获取OSS上传临时凭证")
+    def get_security_token(self, status_code=200):
+        """获取阿里云 OSS 直传的 STS 临时凭证（空 body POST）
+        返回 data 含 accessKeyId/accessKeySecret/securityToken/bucketName/tmpDir/expiration
+        """
+        # Author: Author
+        # Create Date: 2026-10-26
+        # IsAI: True
+        url = "/djsupplier/saveFile/getSecurityToken.do"
+        return self._call_supplier_cpsol(url, {}, status_code,
+                                         "获取OSS上传凭证失败", as_form_data=True)
+
+    def _oss_v1_sign(self, access_key_secret, string_to_sign):
+        """OSS V1 签名：base64(hmac-sha1(accessKeySecret, stringToSign))"""
+        # Author: Author
+        # Create Date: 2026-10-26
+        # IsAI: True
+        import hmac
+        import hashlib
+        import base64
+        digest = hmac.new(access_key_secret.encode("utf-8"),
+                          string_to_sign.encode("utf-8"), hashlib.sha1).digest()
+        return base64.b64encode(digest).decode("utf-8")
+
+    @allure.step("上传图片到OSS并构造figure")
+    def upload_product_image(self, image_bytes, ftype, supplier_id, key_area="3303",
+                             ext="jpg", content_type="image/jpeg", status_code=200):
+        """上传图片到阿里云 OSS tmp 目录，构造产品 figure 条目。
+        链路（拓包实证）：getSecurityToken(STS) → PUT 直传 OSS tmp → 生成带签名 GET URL(furl)。
+        后端 addProduct/editProduct 会将 tmp 图确认并移动到正式目录；复用旧图(save/目录)会报“确认上传图片失败”。
+        返回 figure dict：{ftype, fuserid, fkeyarea, ffileid(tmp对象键), furl(带签名 GET URL)}。
+        ftype：1=主图，2=详情图。
+        """
+        # Author: Author
+        # Create Date: 2026-10-26
+        # IsAI: True
+        import time
+        import random
+        from email.utils import formatdate
+        from urllib.parse import quote
+        import requests
+
+        # 1. 获取 STS 临时凭证
+        tok_res = self.get_security_token(status_code)
+        assert tok_res.get("code") == "10001200", \
+            f"获取OSS上传凭证失败, resp={tok_res}"
+        assert tok_res.get("success") is True, f"success应为True, 实际={tok_res.get('success')}"
+        d = tok_res.get("data") or {}
+        ak = d["accessKeyId"]
+        sk = d["accessKeySecret"]
+        token = d["securityToken"]
+        bucket = d.get("bucketName", "djcps")
+        tmp_dir = d.get("tmpDir", "aliyun-test/fileserver/tmp/")
+        host = f"{bucket}.oss-cn-hangzhou.aliyuncs.com"
+
+        # 2. 生成对象键：tmpDir + {epoch毫秒}{5位随机}.{ext}（与 APP 命名规则一致）
+        filename = f"{int(time.time() * 1000)}{random.randint(10000, 99999)}.{ext}"
+        object_key = f"{tmp_dir}{filename}"
+
+        # 3. PUT 直传（OSS V1 header 签名，使用 x-oss-date；Date 位置置空）
+        oss_date = formatdate(timeval=None, localtime=False, usegmt=True)
+        canon_headers = f"x-oss-date:{oss_date}\nx-oss-security-token:{token}\n"
+        canon_resource = f"/{bucket}/{object_key}"
+        # Date 位取 x-oss-date 的值（OSS 规范：使用 x-oss-date 时 StringToSign 的 Date 字段填其值，非置空）
+        string_to_sign = f"PUT\n\n{content_type}\n{oss_date}\n{canon_headers}{canon_resource}"
+        put_sig = self._oss_v1_sign(sk, string_to_sign)
+        put_url = f"https://{host}/{object_key}"
+        put_headers = {
+            "Content-Type": content_type,
+            "x-oss-date": oss_date,
+            "x-oss-security-token": token,
+            "Authorization": f"OSS {ak}:{put_sig}",
+        }
+        sess = requests.Session()
+        sess.trust_env = False
+        sess.verify = False
+        r = sess.put(put_url, data=image_bytes, headers=put_headers, timeout=30)
+        assert r.status_code == 200, \
+            f"OSS图片直传失败, status={r.status_code}, url={put_url}, resp={r.text[:300]}"
+
+        # 4. 生成带签名的 GET URL 作为 furl（30 分钟有效期；security-token 作为子资源参与签名）
+        expires = str(int(time.time()) + 1800)
+        get_canon = f"/{bucket}/{object_key}?security-token={token}"
+        get_string_to_sign = f"GET\n\n\n{expires}\n{get_canon}"
+        get_sig = self._oss_v1_sign(sk, get_string_to_sign)
+        furl = (f"https://{host}/{object_key}?OSSAccessKeyId={quote(ak, safe='')}"
+                f"&Expires={expires}&Signature={quote(get_sig, safe='')}"
+                f"&security-token={quote(token, safe='')}")
+
+        # 5. 构造 figure 条目
+        return {
+            "ftype": ftype, "fuserid": str(supplier_id), "fkeyarea": key_area,
+            "ffileid": object_key, "furl": furl,
+        }
